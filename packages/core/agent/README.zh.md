@@ -47,7 +47,7 @@ await handle.dispose()   // stops the loop, unregisters, removes the session, un
 
 `agent.model` 实现 `Model` 接口，与 `agent.inbox` 并列。`current()` 返回选择的独立副本：依次读取待生效选择、最近请求的选择和实时 `agent.options`；没有来源同时提供 provider 与 model 时返回 `undefined`。读取不会固定选择，也不会改变已经准备的步骤。
 
-`select({ provider, model, reasoningEffort?, serviceTier? })` 完整赋值，从下一个尚未开始准备的步骤生效。省略强度表示使用适配器默认值；选择操作既不继承旧强度，也不查询默认值。`serviceTier: 'priority'` 请求 Codex Fast 处理；省略则关闭，不继承上一请求的层级。其他提供方忽略该层级。与已记录选择相同则不重复记录，但仅与初始 options 相同仍会记录 `model/selection`。调用方负责校验可用性与能力；追加失败沿用 Session 现有的失败保证。
+`select({ provider, model, reasoningEffort?, serviceTier? })` 完整赋值，从下一个尚未开始准备的步骤生效。省略强度表示使用适配器默认值；选择操作既不继承旧强度，也不查询默认值。`serviceTier` 接受显式 `'default'` 和 `'priority'`；省略则不发送层级、保留提供方默认行为，且不继承上一请求的层级。适配器通过模型 `serviceTiers` 声明可选值；不支持的显式值会使请求准备失败。与已记录选择相同则不重复记录，但仅与初始 options 相同仍会记录 `model/selection`。调用方负责校验可用性与能力；追加失败沿用 Session 现有的失败保证。
 
 普通恢复保留持久化选择。明确覆盖模型的入口先形成完整选择：仅在配置未指定强度且路由不变时保留旧的显式强度，然后调用 `select()`。配置驱动的循环还会在该路由不变时保留已记录的服务层级；改为其他配置路由则清除它。Web 与 ACP 用户选择直接调用 `select()`，因此省略强度表示 Auto。选择 Session 模型不会改变部署默认值。
 

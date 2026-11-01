@@ -558,6 +558,8 @@ interface LlmModelInfo {
   description?: string
   /** Accepted request modalities; absent means unknown, while an explicit omission is negative capability. */
   inputModalities?: readonly ModelModality[]
+  /** Explicit processing tiers the adapter supports; absent advertises no selectable tier, not an effective provider tier. */
+  serviceTiers?: readonly ('default' | 'priority')[]
   /**
    * Selector label advertised by catalog discovery; exact-route resolution
    * omits it, and no model request or Session event carries it.
@@ -566,7 +568,7 @@ interface LlmModelInfo {
 }
 ```
 
-Correctness-sensitive metadata is resolved separately from the advisory catalog and is owned by the adapter serving the exact route. Context capacity, adapter call defaults, reasoning choices, and the system prompt update mode share one exact-model result so consumers do not repeat authoritative model resolution. `SystemPromptUpdate` has the single value `'in-history'`: the model reads the latest `system` message at any position of `messages` as the complete effective system prompt, so the agent loop can append a changed prompt after the cached history instead of rewriting message 0 ([decision rule](../../packages/core/agent-loop/README.md#understand-the-implementation)); an absent mode means only a leading system message is read, and `normalizeModelInfo` rejects any other value with `INVALID_MODEL_INFO`.
+Correctness-sensitive metadata is resolved separately from the advisory catalog and is owned by the adapter serving the exact route. Context capacity, adapter call defaults, reasoning choices, supported explicit service tiers, and the system prompt update mode share one exact-model result so consumers do not repeat authoritative model resolution. `serviceTiers` advertises selectable explicit values, not the provider's effective processing tier. Omitting `serviceTier` sends no tier and preserves provider defaults; explicit `default` and `priority` are distinct request and recorded values. `resolveCallConfig()` and `prepareCall()` reject unsupported explicit tiers with `UNSUPPORTED_OPTION` before provider I/O. `SystemPromptUpdate` has the single value `'in-history'`: the model reads the latest `system` message at any position of `messages` as the complete effective system prompt, so the agent loop can append a changed prompt after the cached history instead of rewriting message 0 ([decision rule](../../packages/core/agent-loop/README.md#understand-the-implementation)); an absent mode means only a leading system message is read, and `normalizeModelInfo` rejects any other value with `INVALID_MODEL_INFO`.
 
 ```ts type-equiv
 /** Provider-owned context capacity for one exact provider/model route. */
@@ -649,8 +651,8 @@ interface GenerateOptions {
   model: string
   /** Adapter-owned reasoning effort selected for this exact model. */
   reasoningEffort?: ReasoningEffortId
-  /** Request priority processing on the openai-codex Codex API only; absent sends no tier. */
-  serviceTier?: 'priority'
+  /** Explicit processing tier; absent sends no tier. Adapters reject unsupported explicit values. */
+  serviceTier?: 'default' | 'priority'
   /**
    * Ordered conversation messages, exactly as the provider sees them. A
    * loop-built request passes the derived history (dsh-agent-loop), whose
@@ -797,8 +799,8 @@ FIXME(call-config-shape): revisit which remaining fields are genuinely epoch-lev
 /** Concrete generation settings; omitted controls use the selected route's defaults. */
 interface LlmCallControls {
   reasoningEffort?: ReasoningEffortId
-  /** Request Codex priority processing; absence disables it and other providers ignore it. */
-  serviceTier?: 'priority'
+  /** Explicit processing tier; omission leaves provider defaults unchanged. Adapters reject unsupported tiers. */
+  serviceTier?: 'default' | 'priority'
   temperature?: number
   maxTokens?: number
   stop?: string[]
@@ -1132,7 +1134,7 @@ async resolveModelInfo( provider: string, model: string, signal?: AbortSignal, )
 
 /**
  * Validate a conversation call config against its exact model capability and
- * materialize adapter-configured defaults. Unsupported explicit efforts
+ * materialize adapter-configured defaults. Unsupported explicit efforts or tiers
  * reject before provider I/O; no clamping or aliasing is performed. This
  * standalone query does not bind a later dispatch; use {@link prepareCall}
  * when logging and streaming must share one adapter registration.

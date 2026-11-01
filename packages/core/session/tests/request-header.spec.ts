@@ -57,6 +57,9 @@ describe('headerEquals', () => {
 
   it('compares priority independently of route and clears it in a replacement header', () => {
     const priority = canonicalHeader({ config: { ...CONFIG, serviceTier: 'priority' } })
+    const explicitDefault = canonicalHeader({ config: { ...CONFIG, serviceTier: 'default' } })
+    expect(headerEquals(explicitDefault, { config: CONFIG })).toBe(false)
+    expect(headerEquals(explicitDefault, priority)).toBe(false)
     expect(headerEquals(priority, structuredClone(priority))).toBe(true)
     expect(headerEquals(priority, { config: CONFIG })).toBe(false)
     expect(headerEquals({ config: CONFIG }, priority)).toBe(false)

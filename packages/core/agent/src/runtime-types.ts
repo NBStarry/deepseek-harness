@@ -63,7 +63,7 @@ export interface Model {
   /**
    * Replace the next step's complete selection. Omitted effort follows adapter
    * defaults without inheriting a previous effort or resolving defaults here.
-   * Omitted service tier disables priority processing for future steps.
+   * Omitted service tier leaves provider defaults unchanged for future steps.
    * An equal recorded choice is a no-op; an options-only fallback is
    * always recorded. Callers own model availability and capability validation.
    * The append uses the Session's existing persistence and failure guarantees.

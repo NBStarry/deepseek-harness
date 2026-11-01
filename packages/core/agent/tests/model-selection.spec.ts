@@ -115,9 +115,9 @@ describe('Session model selection', () => {
     expect(h.state()).toBe(state)
   })
 
-  it('projects priority choices and clears them when omitted, including after replay', async () => {
+  it.each(['default', 'priority'] as const)('projects %s choices and clears them when omitted, including after replay', async (serviceTier) => {
     const h = await harness()
-    const priority: ModelSelection = { ...INITIAL, serviceTier: 'priority' }
+    const priority: ModelSelection = { ...INITIAL, serviceTier }
     expect(h.current()).not.toHaveProperty('serviceTier')
     h.record(priority)
     h.header(INITIAL)

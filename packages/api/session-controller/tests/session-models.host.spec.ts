@@ -63,11 +63,13 @@ class CatalogAdapter extends LlmAdapter {
 
   override resolveModel(provider: string, model: string): Promise<LlmResolvedModelInfo> {
     if (this.exactError !== undefined) return Promise.reject(this.exactError)
+    const serviceTiers = this.models instanceof Error ? undefined : this.models.find(entry => entry.id === model)?.serviceTiers
     return Promise.resolve({
       provider,
       id: model,
       name: model,
       ...this.reasoning === undefined ? {} : { reasoning: this.reasoning },
+      ...serviceTiers === undefined ? {} : { serviceTiers },
     })
   }
 
@@ -431,7 +433,7 @@ describe('Web session model selection', () => {
   it('preserves optional catalog metadata and string provider failures', async () => {
     const { ctx } = await harness()
     ctx.llm.registerAdapter(['plain'], new CatalogAdapter('Plain', [
-      { provider: 'plain', id: 'plain-model', name: 'Plain Model' },
+      { provider: 'plain', id: 'plain-model', name: 'Plain Model', serviceTiers: ['default', 'priority'] },
       { provider: 'plain', id: 'badged-model', name: 'Badged Model', badge: { text: { en: 'New', zh: '新' }, tone: 'info' } },
     ]))
     ctx.llm.registerAdapter(['described-reasoning'], new CatalogAdapter('Described Reasoning', [
@@ -453,7 +455,7 @@ describe('Web session model selection', () => {
     const catalog = await buildModelCatalog(ctx)
     expect(catalog.groups).toEqual(expect.arrayContaining([
       { id: 'plain', name: 'Plain', models: [
-        { id: 'plain-model', name: 'Plain Model' },
+        { id: 'plain-model', name: 'Plain Model', serviceTiers: ['default', 'priority'] },
         { id: 'badged-model', name: 'Badged Model', badge: { text: { en: 'New', zh: '新' }, tone: 'info' } },
       ] },
       {
@@ -474,11 +476,11 @@ describe('Web session model selection', () => {
     await ctx.fiber.dispose()
   })
 
-  it('records session-only Fast changes without saving global defaults', async () => {
+  it('records all three session tier states without saving tier-only changes as global defaults', async () => {
     const { ctx, agent, sessionId } = await harness()
     onTestFinished(() => ctx.fiber.dispose())
     ctx.llm.registerAdapter(['openai-codex'], new CatalogAdapter('Codex', [
-      { provider: 'openai-codex', id: 'codex', name: 'Codex' },
+      { provider: 'openai-codex', id: 'codex', name: 'Codex', serviceTiers: ['default', 'priority'] },
     ], REASONING))
     const remote = await createSessionTestRemote(ctx, { defaultModelSelection: () => ({ provider: 'openai-codex', model: 'codex', reasoningEffort: ReasoningEffortId('high') }), cwd: '/tmp' })
     const save = vi.spyOn(ctx.agentDefaultModel, 'saveSelection')
@@ -487,9 +489,21 @@ describe('Web session model selection', () => {
     expect(agent.model.current()).toEqual({ ...selection, serviceTier: 'priority' })
     expect(agent.session.snapshotEvents().at(-1)).toMatchObject({ type: 'model/selection', data: { ...selection, serviceTier: 'priority' } })
     expect(save).not.toHaveBeenCalled()
+    expectValue(await remote.selectModel({ sessionId, ...selection, serviceTier: 'default' }))
+    expect(agent.model.current()).toEqual({ ...selection, serviceTier: 'default' })
+    expect(save).not.toHaveBeenCalled()
     expectValue(await remote.selectModel({ sessionId, ...selection }))
     expect(agent.model.current()).toEqual(selection)
     expect(save).not.toHaveBeenCalled()
+    expectValue(await remote.selectModel({ sessionId, ...selection, reasoningEffort: 'max', serviceTier: 'priority' }))
+    expect(save).toHaveBeenCalledWith({ ...selection, reasoningEffort: 'max' })
+    expect(save.mock.calls.at(-1)?.[0]).not.toHaveProperty('serviceTier')
+    const events = agent.session.snapshotEvents().length
+    const rejected = await remote.selectModel({ sessionId, provider: 'deepseek-official', model: 'deepseek-chat', serviceTier: 'default' })
+    expect(rejected).toMatchObject({ ok: false, error: { code: 'session/model-unavailable' } })
+    expect(agent.session.snapshotEvents()).toHaveLength(events)
+    expect(agent.model.current()).toEqual({ ...selection, reasoningEffort: 'max', serviceTier: 'priority' })
+    expect(save).toHaveBeenCalledTimes(1)
   })
 
   it('rejects unlisted models and records validated selections for the next step', async () => {

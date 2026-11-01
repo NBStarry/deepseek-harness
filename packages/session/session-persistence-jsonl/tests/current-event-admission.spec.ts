@@ -46,9 +46,10 @@ describe('current event admission at EOF', () => {
     return path
   }
 
-  it.each(['strict', 'recoverable'] as const)('preserves priority on/off across committed turns and resume in %s scans', async (recovery) => {
+  it.each(['strict', 'recoverable'] as const)('preserves omitted, default and priority tiers across resume in %s scans', async (recovery) => {
     const route = { provider: 'openai-codex', model: 'gpt-5.4' }
     const priority = { ...route, serviceTier: 'priority' }
+    const standard = { ...route, serviceTier: 'default' }
     const events = [
       { type: 'model/selection', data: priority },
       { type: 'turn/start', data: { turn: 1 } },
@@ -68,6 +69,12 @@ describe('current event admission at EOF', () => {
       { type: 'request/header', data: { header: { config: route }, reason: 'change' } },
       { type: 'step/end', data: { turn: 3, step: 1 } },
       { type: 'turn/end', data: { turn: 3, reason: { kind: 'completed' } } },
+      { type: 'model/selection', data: standard },
+      { type: 'turn/start', data: { turn: 4 } },
+      { type: 'step/start', data: { turn: 4, step: 1 } },
+      { type: 'request/header', data: { header: { config: standard }, reason: 'change' } },
+      { type: 'step/end', data: { turn: 4, step: 1 } },
+      { type: 'turn/end', data: { turn: 4, reason: { kind: 'completed' } } },
     ].map((event, seq) => ({ ...event, seq, time: seq + 1 }))
     const headerBytes = Buffer.from(JSON.stringify(header) + '\n')
     const eventBytes = Buffer.from(events.map(event => JSON.stringify(event)).join('\n') + '\n')
@@ -81,6 +88,7 @@ describe('current event admission at EOF', () => {
     for (const event of events) expect(restored.eventAt(SessionSeq(event.seq))).toEqual(event)
     expect(restored.eventAt(SessionSeq(0))?.data).toHaveProperty('serviceTier', 'priority')
     expect(restored.eventAt(SessionSeq(12))?.data).not.toHaveProperty('serviceTier')
+    expect(restored.eventAt(SessionSeq(18))?.data).toHaveProperty('serviceTier', 'default')
 
     const path = await store(bytes)
     const handle = await ctx.sessionPersistence.open(id, 'write')
@@ -94,6 +102,29 @@ describe('current event admission at EOF', () => {
       await handle.close()
     }
     expect(await readFile(path)).toEqual(bytes)
+  })
+
+  it('preserves a committed generation when Session restoration refuses a tier', async () => {
+    const config = { provider: 'openai-codex', model: 'gpt-5.4', serviceTier: 'future-required' }
+    const events = [
+      { type: 'turn/start', data: { turn: 1 } },
+      { type: 'request/header', data: { header: { config }, reason: 'initial' } },
+      { type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } },
+    ].map((event, seq) => ({ ...event, seq, time: seq + 1 }))
+    const bytes = Buffer.from([header, ...events].map(row => JSON.stringify(row)).join('\n') + '\n')
+    expect(scanLog(bytes)).toMatchObject({ events, committedBytes: bytes.length })
+    const path = await store(bytes)
+    for (const access of ['read', 'write'] as const) {
+      const operation = async () => {
+        const handle = await ctx.sessionPersistence.open(id, access)
+        try {
+          const stored = await handle.read()
+          Session.fromRestore(id, stored.events, handle.header, handle.inheritedEventCount, stored.eventState)
+        } finally { await handle.close() }
+      }
+      await expect(operation()).rejects.toThrow('invalid serviceTier')
+      expect(await readFile(path)).toEqual(bytes)
+    }
   })
 
   it.each([{ surfaceOp: 'append' }, { sourceEventSeqs: [] }])('refuses unknown required metadata %j without truncating a provider append', async (metadata) => {

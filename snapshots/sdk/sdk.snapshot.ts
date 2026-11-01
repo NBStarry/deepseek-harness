@@ -1029,12 +1029,13 @@ describe('TypeScript SDK snapshots over the jsonrpc runtime', () => {
         const headers = events.filter(event => event.type === 'request/header')
         const route = { provider: 'openai-codex', model: 'gpt-5.4' }
         const priority = { ...route, serviceTier: 'priority' }
+        const standard = { ...route, serviceTier: 'default' }
         expect(headers.map(event => event.data.header.config)).toEqual([
-          route, priority, priority, route, priority, { ...route, model: 'gpt-5.4-mini' },
+          route, priority, priority, standard, priority, { ...route, model: 'gpt-5.4-mini' },
         ])
         expect(headers.map(event => event.data.reason)).toEqual(['initial', 'change', 'resume', 'change', 'change', 'resume'])
         expect(records(ordered[0]!.content).filter(event => event.type === 'model/selection').map(event => event.data))
-          .toEqual([priority, route, priority, { ...route, model: 'gpt-5.4-mini' }])
+          .toEqual([priority, standard, priority, { ...route, model: 'gpt-5.4-mini' }])
         const selectedTypes = new Set(['model/selection', 'request/header'])
         const subscribed = notifications.flatMap(notification => {
           const event = notificationEvent(notification)

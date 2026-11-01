@@ -1417,6 +1417,7 @@ describe('installLlmReplay (through the real LlmRuntime)', () => {
               defaultReasoningEffort: 'max',
               systemPromptUpdate: 'in-history',
               toolUpdate: 'addition-only',
+              serviceTiers: ['default', 'priority'],
             },
             { id: 'pro', name: 'Pro', description: 'Larger model', reasoningEfforts: ['high'], badge: { text: { en: 'New', zh: '新' }, tone: 'info' } },
           ],
@@ -1430,7 +1431,10 @@ describe('installLlmReplay (through the real LlmRuntime)', () => {
       { id: 'empty', name: 'empty' },
     ])
     await expect(ctx.llm.listModels('deepseek')).resolves.toEqual([
-      { provider: 'deepseek', id: 'flash', name: 'flash', inputModalities: ['text', 'image'] },
+      {
+        provider: 'deepseek', id: 'flash', name: 'flash', inputModalities: ['text', 'image'],
+        serviceTiers: ['default', 'priority'],
+      },
       { provider: 'deepseek', id: 'pro', name: 'Pro', description: 'Larger model', badge: { text: { en: 'New', zh: '新' }, tone: 'info' } },
     ])
     await expect(ctx.llm.listModels('empty')).resolves.toEqual([])
@@ -1444,6 +1448,7 @@ describe('installLlmReplay (through the real LlmRuntime)', () => {
       },
       systemPromptUpdate: 'in-history',
       toolUpdate: 'addition-only',
+      serviceTiers: ['default', 'priority'],
     })
     await expect(ctx.llm.resolveModelInfo('deepseek', 'pro')).resolves.not.toHaveProperty('systemPromptUpdate')
     await expect(ctx.llm.resolveModelInfo('deepseek', 'pro')).resolves.not.toHaveProperty('toolUpdate')
@@ -2226,6 +2231,16 @@ describe('apply (the plugin entry)', () => {
       NonNullable<Config['providers']>
     expect(() => { apply(ctx, { file, providers }) }).toThrow(
       'llm-replay: provider "m" model "m" imageRequestTokens must be a positive safe integer',
+    )
+  })
+
+  it.each(['priority', ['auto'], [null]])('rejects invalid service tiers %j during load', (serviceTiers) => {
+    const ctx = new Context()
+    const providers: NonNullable<Config['providers']> = [{
+      id: 'm', models: [{ id: 'm', serviceTiers: serviceTiers as never }],
+    }]
+    expect(() => { apply(ctx, { file, providers }) }).toThrow(
+      'llm-replay: provider "m" model "m" serviceTiers must contain only "default" and "priority"',
     )
   })
 

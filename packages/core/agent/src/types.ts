@@ -83,8 +83,8 @@ export interface ModelSelection {
   model: string
   /** Adapter-owned reasoning effort, or provider/default behavior when absent. */
   reasoningEffort?: ReasoningEffortId
-  /** Request Codex priority processing; absence disables Fast mode. Other providers ignore it. */
-  serviceTier?: 'priority'
+  /** Explicit processing tier; omission leaves provider defaults unchanged. Adapters reject unsupported tiers. */
+  serviceTier?: 'default' | 'priority'
 }
 
 /** Client view of the durable model-selection fold. */

@@ -27,10 +27,10 @@ export interface ModelSelectionProjectionState {
  * @param provider - provider route.
  * @param model - provider-owned model id.
  * @param reasoningEffort - explicit effort; omission follows adapter defaults.
- * @param serviceTier - explicit priority processing; omission disables it.
+ * @param serviceTier - explicit processing tier; omission leaves provider defaults unchanged.
  * @returns a detached selection.
  */
-function toSelection(provider: string, model: string, reasoningEffort: ReasoningEffortId | undefined, serviceTier?: 'priority'): ModelSelection {
+function toSelection(provider: string, model: string, reasoningEffort: ReasoningEffortId | undefined, serviceTier?: ModelSelection['serviceTier']): ModelSelection {
   return {
     provider, model,
     ...reasoningEffort === undefined ? {} : { reasoningEffort },
@@ -73,7 +73,7 @@ const selectionSchema = z.object({
   provider: z.string().min(1),
   model: z.string().min(1),
   reasoningEffort: z.string().min(1).transform(ReasoningEffortId).exactOptional(),
-  serviceTier: z.literal('priority').exactOptional(),
+  serviceTier: z.enum(['default', 'priority']).exactOptional(),
 }).nullable()
 
 /**
@@ -82,7 +82,7 @@ const selectionSchema = z.object({
  */
 export const modelSelectionProjectionDefinition: Required<ProjectionDefinition<'modelSelection', ModelSelectionProjectionState>> = {
   key: 'modelSelection',
-  stateVersion: 4,
+  stateVersion: 5,
   stateSchema: z.object({ lastUsed: selectionSchema, pending: selectionSchema }),
   init: () => ({ lastUsed: null, pending: null }),
   apply: (state, event) => {

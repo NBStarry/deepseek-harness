@@ -23,13 +23,17 @@ async function storageRoot(): Promise<string> {
   return root
 }
 
-async function runtime(root: string, persistence = true, reasoning?: LlmModelReasoningInfo) {
+async function runtime(
+  root: string, persistence = true, reasoning?: LlmModelReasoningInfo,
+  serviceTiers?: readonly ('default' | 'priority')[],
+) {
   const ctx = new Context()
   cleanups.push(() => ctx.fiber.dispose())
   await mountAgentLoopTestDependencies(ctx)
   if (persistence) await ctx.plugin(JsonlSessionPersistence, { root })
   await ctx.plugin(AgentLoop, { agents: [] })
   const adapter = new MockAdapter([textResponse('remembered')], reasoning)
+  if (serviceTiers !== undefined) adapter.serviceTiers = serviceTiers
   ctx.llm.registerAdapter(['mock', 'openai-codex', 'other-codex'], adapter)
   const events: SessionEventNotification[] = []
   const transport: JsonRpcTransportPeer = {
@@ -80,25 +84,29 @@ describe('SDK persisted session resume', () => {
   })
 
   it.each([
-    { provider: 'openai-codex', model: 'gpt-5.4', effort: undefined, tier: 'priority' },
-    { provider: 'openai-codex', model: 'gpt-5.4', effort: 'low', tier: 'priority' },
-    { provider: 'openai-codex', model: 'other', effort: undefined, tier: undefined },
-    { provider: 'other-codex', model: 'gpt-5.4', effort: undefined, tier: undefined },
-  ])('preserves saved Fast only on the same route: $provider / $model / $effort', async ({ provider, model, effort, tier }) => {
+    { provider: 'openai-codex', model: 'gpt-5.4', effort: undefined, storedTier: 'priority', tier: 'priority' },
+    { provider: 'openai-codex', model: 'gpt-5.4', effort: 'low', storedTier: 'priority', tier: 'priority' },
+    { provider: 'openai-codex', model: 'other', effort: undefined, storedTier: 'priority', tier: undefined },
+    { provider: 'other-codex', model: 'gpt-5.4', effort: undefined, storedTier: 'priority', tier: undefined },
+    { provider: 'openai-codex', model: 'gpt-5.4', effort: undefined, storedTier: 'default', tier: 'default' },
+    { provider: 'openai-codex', model: 'other', effort: undefined, storedTier: 'default', tier: undefined },
+  ] as const)('preserves saved service tier only on the same route: $provider / $model / $effort / $storedTier', async ({
+    provider, model, effort, storedTier, tier,
+  }) => {
     const root = await storageRoot()
     const first = await runtime(root)
     await first.server.initialize({ cwd: root, provider: 'openai-codex', model: 'gpt-5.4' })
     await first.server.prompt({ sessionId: 'saved-fast', contentBlocks: [{ type: 'text', text: 'remember' }] })
     await first.server.wait({ sessionId: 'saved-fast' })
     first.ctx.agents.get(SessionId('saved-fast'))!.model.select({
-      provider: 'openai-codex', model: 'gpt-5.4', serviceTier: 'priority',
+      provider: 'openai-codex', model: 'gpt-5.4', serviceTier: storedTier,
     })
     await first.server.shutdown()
     await first.ctx.fiber.dispose()
 
     const second = await runtime(root, true, {
       efforts: [{ id: ReasoningEffortId('low'), name: 'Low' }],
-    })
+    }, ['default', 'priority'])
     await second.server.initialize({
       cwd: root, provider, model,
       ...effort === undefined ? {} : { reasoningEffort: ReasoningEffortId(effort) },

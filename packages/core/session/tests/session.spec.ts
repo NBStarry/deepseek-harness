@@ -552,10 +552,10 @@ describe('Session', () => {
     }
   })
 
-  it('round-trips priority and rejects unsupported durable service tiers', () => {
+  it.each(['default', 'priority'] as const)('round-trips %s and rejects unsupported durable service tiers', (serviceTier) => {
     const valid = {
       type: 'request/header', seq: SessionSeq(0), time: 1,
-      data: { header: { config: { provider: 'mock', model: 'model', serviceTier: 'priority' } }, reason: 'initial' },
+      data: { header: { config: { provider: 'mock', model: 'model', serviceTier } }, reason: 'initial' },
     } as const
     expect(Session.create(SessionId('priority-tier'), [valid]).snapshotEvents()[0]).toEqual(valid)
     for (const serviceTier of ['auto', '', false, 1]) {

@@ -58,8 +58,8 @@ export interface ModelSelectInjected {
    */
   resolveText: (text: NonNullable<ModelCatalogModel['badge']>['text']) => string
   /**
-   * Select a complete provider/model/reasoning selection.
-   * @param selection - model selection and optional adapter-owned effort.
+   * Select a complete provider/model selection, including optional effort and service tier.
+   * @param selection - complete Session selection; omitted controls clear their explicit values.
    * @returns the Host outcome, or undefined when this Session cannot select a model.
    */
   select: (selection: ModelSelection) => Promise<RemoteResult<void> | undefined>

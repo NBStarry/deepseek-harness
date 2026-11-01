@@ -741,6 +741,7 @@ export class LlmRuntime extends TypertRemoteService {
         name: model.name,
         ...model.description === undefined ? {} : { description: model.description },
         ...inputModalities === undefined ? {} : { inputModalities },
+        ...model.serviceTiers === undefined ? {} : { serviceTiers: [...model.serviceTiers] },
         ...badge === undefined ? {} : {
           badge: { text: typeof badge.text === 'string' ? badge.text : { ...badge.text }, tone: badge.tone },
         },
@@ -835,6 +836,7 @@ export class LlmRuntime extends TypertRemoteService {
       name: resolved.name,
       ...resolved.description === undefined ? {} : { description: resolved.description },
       ...inputModalities === undefined ? {} : { inputModalities },
+      ...resolved.serviceTiers === undefined ? {} : { serviceTiers: [...resolved.serviceTiers] },
       ...context === undefined ? {} : { context: { contextWindow: context.contextWindow } },
       ...defaultMaxTokens === undefined ? {} : { defaultMaxTokens },
       ...resolved.systemPromptUpdate === undefined ? {} : { systemPromptUpdate: resolved.systemPromptUpdate },
@@ -887,7 +889,7 @@ export class LlmRuntime extends TypertRemoteService {
 
   /**
    * Validate a conversation call config against its exact model capability and
-   * materialize adapter-configured defaults. Unsupported explicit efforts
+   * materialize adapter-configured defaults. Unsupported explicit efforts or tiers
    * reject before provider I/O; no clamping or aliasing is performed. This
    * standalone query does not bind a later dispatch; use {@link prepareCall}
    * when logging and streaming must share one adapter registration.
@@ -913,6 +915,12 @@ export class LlmRuntime extends TypertRemoteService {
     config: LlmCallConfig,
     info: LlmResolvedModelInfo,
   ): { config: LlmCallConfig; context?: LlmModelContext; modelInfo: LlmResolvedModelInfo } {
+    if (config.serviceTier !== undefined && !info.serviceTiers?.includes(config.serviceTier)) {
+      throw new LlmError(
+        `provider "${config.provider}" model "${config.model}" does not support service tier "${config.serviceTier}"`,
+        'UNSUPPORTED_OPTION',
+      )
+    }
     const defaulted = config.maxTokens === undefined && info.defaultMaxTokens !== undefined
       ? { ...config, maxTokens: info.defaultMaxTokens }
       : config

@@ -36,6 +36,7 @@ async function harness(capable = new MockAdapter(Array.from({ length: 8 }, () =>
   await ctx.plugin(AgentRegistry)
   await ctx.plugin(AgentLoop, { agents: [] })
   capable.systemPromptUpdate = 'in-history'
+  capable.serviceTiers = ['default', 'priority']
   const plain = new MockAdapter(Array.from({ length: 8 }, () => textResponse('ok')))
   ctx.llm.registerAdapter(['capable'], capable)
   ctx.llm.registerAdapter(['plain'], plain)
@@ -493,36 +494,38 @@ describe('prepared-route prompt admission', () => {
     await send(h.agent, 'default')
     h.agent.model.select({ ...selection, serviceTier: 'priority' })
     await send(h.agent, 'fast')
+    h.agent.model.select({ ...selection, serviceTier: 'default' })
+    await send(h.agent, 'explicit default')
     h.agent.model.select(selection)
     await send(h.agent, 'off')
     await send(h.agent, 'still off')
-    expect(h.capable.requests.map(request => request.serviceTier)).toEqual([undefined, 'priority', undefined, undefined])
+    expect(h.capable.requests.map(request => request.serviceTier)).toEqual([undefined, 'priority', 'default', undefined, undefined])
     const headers = h.agent.session.snapshotEvents().filter(event => event.type === 'request/header')
     expect(headers.map(event => [event.data.reason, event.data.header.config.serviceTier]))
-      .toEqual([['initial', undefined], ['change', 'priority'], ['change', undefined]])
+      .toEqual([['initial', undefined], ['change', 'priority'], ['change', 'default'], ['change', undefined]])
     expect(headers.at(-1)?.data.header.config).not.toHaveProperty('serviceTier')
   })
 
-  it('retains priority across a retry when Fast is switched off during the failed attempt', async () => {
+  it.each(['default', 'priority'] as const)('retains %s across a retry when selection changes during the failed attempt', async (serviceTier) => {
     const adapter = new MockAdapter([
       () => { throw new LlmError('retry this request', 'SERVER') },
       textResponse('recovered'), textResponse('off'),
     ])
     const h = await harness(adapter)
     const selection = { provider: 'capable', model: 'model' }
-    h.agent.model.select({ ...selection, serviceTier: 'priority' })
+    h.agent.model.select({ ...selection, serviceTier })
     h.ctx.on('agent/request-error', () => {
       h.agent.model.select(selection)
       return Promise.resolve({ kind: 'retry' as const })
     })
     await send(h.agent, 'retry')
-    expect(adapter.requests.map(request => request.serviceTier)).toEqual(['priority', 'priority'])
+    expect(adapter.requests.map(request => request.serviceTier)).toEqual([serviceTier, serviceTier])
     expect(h.agent.model.current()).toEqual(selection)
     await send(h.agent, 'next step')
-    expect(adapter.requests.map(request => request.serviceTier)).toEqual(['priority', 'priority', undefined])
+    expect(adapter.requests.map(request => request.serviceTier)).toEqual([serviceTier, serviceTier, undefined])
   })
 
-  it.each([undefined, 'priority'] as const)('rejects request-hook changes to the captured tier %s', async (selected) => {
+  it.each([undefined, 'default', 'priority'] as const)('rejects request-hook changes to the captured tier %s', async (selected) => {
     const h = await harness()
     h.agent.model.select({ provider: 'capable', model: 'model', ...selected === undefined ? {} : { serviceTier: selected } })
     h.ctx.on('agent/request', async (_payload, next) => {
@@ -531,9 +534,9 @@ describe('prepared-route prompt admission', () => {
     })
     await send(h.agent, 'reject')
     expect(h.capable.requests).toEqual([])
-    expect(h.agent.session.snapshotEvents().at(-1)).toMatchObject({
-      type: 'turn/end', data: { reason: { kind: 'error', error: { message: expect.stringContaining('proposed service tier') } } },
-    })
+    const end = h.agent.session.snapshotEvents().at(-1)
+    expect(end).toMatchObject({ type: 'turn/end', data: { reason: { kind: 'error' } } })
+    expect(end).toHaveProperty('data.reason.error.message', expect.stringContaining('proposed service tier'))
   })
 
   it('retains the captured selection for a retry and uses a pending choice on the next step', async () => {

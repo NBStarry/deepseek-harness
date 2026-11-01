@@ -164,7 +164,12 @@ export class SessionCommandController {
         agent.model.select(selected)
         const tierOnly = previous !== undefined && previous.provider === selected.provider && previous.model === selected.model
           && previous.reasoningEffort === selected.reasoningEffort && previous.serviceTier !== selected.serviceTier
-        if (!tierOnly) void this.ctx.agentDefaultModel.saveSelection(selected).catch((error: unknown) => {
+        const defaultSelection = {
+          provider: selected.provider,
+          model: selected.model,
+          ...selected.reasoningEffort === undefined ? {} : { reasoningEffort: selected.reasoningEffort },
+        }
+        if (!tierOnly) void this.ctx.agentDefaultModel.saveSelection(defaultSelection).catch((error: unknown) => {
           this.ctx.logger.warn(
             `session-controller: model selection changed for the Session but the default was not saved: ${String(error)}`,
           )

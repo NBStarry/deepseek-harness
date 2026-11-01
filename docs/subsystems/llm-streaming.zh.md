@@ -564,6 +564,8 @@ interface LlmModelInfo {
   description?: string
   /** Accepted request modalities; absent means unknown, while an explicit omission is negative capability. */
   inputModalities?: readonly ModelModality[]
+  /** Explicit processing tiers the adapter supports; absent advertises no selectable tier, not an effective provider tier. */
+  serviceTiers?: readonly ('default' | 'priority')[]
   /**
    * Selector label advertised by catalog discovery; exact-route resolution
    * omits it, and no model request or Session event carries it.
@@ -572,7 +574,7 @@ interface LlmModelInfo {
 }
 ```
 
-对正确性敏感的元数据与参考目录分开解析，并归服务该确切路由的适配器所有。上下文容量、适配器调用默认值、推理选项和系统提示词更新模式共用同一个确切模型结果，消费方因而无需重复执行权威模型解析。`SystemPromptUpdate` 只有一个值 `'in-history'`：模型把 `messages` 中任意位置最新的 `system` 消息读作完整的有效系统提示词，因此 agent loop 可以把变化后的提示词追加到已缓存历史之后，而不是改写第 0 条消息（[决策规则](../../packages/core/agent-loop/README.zh.md#understand-the-implementation)）；模式缺失表示只读取开头的 system 消息，`normalizeModelInfo` 以 `INVALID_MODEL_INFO` 拒绝任何其他值。
+对正确性敏感的元数据与参考目录分开解析，并归服务该确切路由的适配器所有。上下文容量、适配器调用默认值、推理选项、支持的显式服务层级和系统提示词更新模式共用同一个确切模型结果，消费方因而无需重复执行权威模型解析。`serviceTiers` 声明可选择的显式值，不表示提供方实际采用的处理层级。省略 `serviceTier` 时不发送层级字段并保留提供方默认行为；显式的 `default` 与 `priority` 在请求和记录中都是不同值。`resolveCallConfig()` 与 `prepareCall()` 在提供方 I/O 前以 `UNSUPPORTED_OPTION` 拒绝不支持的显式层级。`SystemPromptUpdate` 只有一个值 `'in-history'`：模型把 `messages` 中任意位置最新的 `system` 消息读作完整的有效系统提示词，因此 agent loop 可以把变化后的提示词追加到已缓存历史之后，而不是改写第 0 条消息（[决策规则](../../packages/core/agent-loop/README.zh.md#understand-the-implementation)）；模式缺失表示只读取开头的 system 消息，`normalizeModelInfo` 以 `INVALID_MODEL_INFO` 拒绝任何其他值。
 
 ```ts type-equiv
 /** Provider-owned context capacity for one exact provider/model route. */
@@ -655,8 +657,8 @@ interface GenerateOptions {
   model: string
   /** Adapter-owned reasoning effort selected for this exact model. */
   reasoningEffort?: ReasoningEffortId
-  /** Request priority processing on the openai-codex Codex API only; absent sends no tier. */
-  serviceTier?: 'priority'
+  /** Explicit processing tier; absent sends no tier. Adapters reject unsupported explicit values. */
+  serviceTier?: 'default' | 'priority'
   /**
    * Ordered conversation messages, exactly as the provider sees them. A
    * loop-built request passes the derived history (dsh-agent-loop), whose
@@ -803,8 +805,8 @@ FIXME(call-config-shape)：重新审视其余哪些字段出于缓存目的确�
 /** Concrete generation settings; omitted controls use the selected route's defaults. */
 interface LlmCallControls {
   reasoningEffort?: ReasoningEffortId
-  /** Request Codex priority processing; absence disables it and other providers ignore it. */
-  serviceTier?: 'priority'
+  /** Explicit processing tier; omission leaves provider defaults unchanged. Adapters reject unsupported tiers. */
+  serviceTier?: 'default' | 'priority'
   temperature?: number
   maxTokens?: number
   stop?: string[]
@@ -1138,7 +1140,7 @@ async resolveModelInfo( provider: string, model: string, signal?: AbortSignal, )
 
 /**
  * Validate a conversation call config against its exact model capability and
- * materialize adapter-configured defaults. Unsupported explicit efforts
+ * materialize adapter-configured defaults. Unsupported explicit efforts or tiers
  * reject before provider I/O; no clamping or aliasing is performed. This
  * standalone query does not bind a later dispatch; use {@link prepareCall}
  * when logging and streaming must share one adapter registration.

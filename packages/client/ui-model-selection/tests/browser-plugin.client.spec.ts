@@ -92,7 +92,7 @@ async function bench(locale: 'zh' | 'en' = 'zh') {
         },
       })
     },
-    selectModel: (payload: { sessionId: SessionId; provider: string; model: string; reasoningEffort?: string; serviceTier?: 'priority' }) => {
+    selectModel: (payload: { sessionId: SessionId; provider: string; model: string; reasoningEffort?: string; serviceTier?: 'default' | 'priority' }) => {
       calls.select += 1
       if (selectionFailure !== undefined) return Promise.resolve({ ok: false as const, error: selectionFailure })
       selected = {
@@ -207,24 +207,25 @@ async function bench(locale: 'zh' | 'en' = 'zh') {
 const projection = (id: string) => ({ sessionId: sid(id) })
 
 describe('ui-model-selection dual entry', () => {
-  it('preserves Fast through the popup and restores it from only its session projection', async () => {
+  it.each(['default', 'priority', undefined] as const)('preserves %s through the popup and restores it from only its session projection', async (serviceTier) => {
+    const tier = serviceTier === undefined ? {} : { serviceTier }
     const b = await bench()
     try {
-      b.setGroups([{ ...GROUPS[0]!, id: 'openai-codex', name: 'Codex' }, GROUPS[1]!])
+      b.setGroups([{ ...GROUPS[0]!, id: 'custom', name: 'Custom', models: GROUPS[0]!.models.map(model => ({ ...model, serviceTiers: ['default', 'priority'] })) }, GROUPS[1]!])
       b.remote.emit('llm/adapters-updated', [])
       b.mint('fast')
       b.mint('ordinary')
       const input = projection('fast')
       const options = await b.popup().options(input, new AbortController().signal)
       const face = b.seat().inject!(sid('fast'))
-      await face.select({ provider: 'openai-codex', model: 'deepseek-v4-flash', serviceTier: 'priority' })
+      await face.select({ provider: 'custom', model: 'deepseek-v4-flash', ...tier })
       await b.popup().onSelect(options[1]!, input)
       expect(face.directory.getSnapshot().current).toEqual({
-        provider: 'openai-codex', model: 'deepseek-v4-pro', reasoningEffort: 'high', serviceTier: 'priority',
+        provider: 'custom', model: 'deepseek-v4-pro', reasoningEffort: 'high', ...tier,
       })
       expect(b.seat().inject!(sid('ordinary')).directory.getSnapshot().current?.serviceTier).toBeUndefined()
-      b.setProjected(sid('fast'), { lastUsed: null, next: { provider: 'openai-codex', model: 'deepseek-v4-flash', serviceTier: 'priority' } })
-      expect(face.directory.getSnapshot().current?.serviceTier).toBe('priority')
+      b.setProjected(sid('fast'), { lastUsed: null, next: { provider: 'custom', model: 'deepseek-v4-flash', ...tier } })
+      expect(face.directory.getSnapshot().current?.serviceTier).toBe(serviceTier)
       await b.popup().onSelect(options[2]!, input)
       expect(face.directory.getSnapshot().current).toEqual({ provider: 'external', model: 'deepseek-v4-flash' })
     } finally {

@@ -89,8 +89,8 @@ export interface ModelSelection {
   readonly provider: string
   readonly model: string
   readonly reasoningEffort?: string
-  /** Session-only priority processing; omitted means off. */
-  readonly serviceTier?: 'priority'
+  /** Session-only service tier; omission delegates to the adapter or server default. */
+  readonly serviceTier?: 'default' | 'priority'
 }
 
 /** One adapter-owned reasoning effort for an exact model route. */
@@ -112,6 +112,8 @@ export interface ModelCatalogModel {
   readonly name: string
   readonly description?: string
   readonly reasoning?: ModelReasoning
+  /** Explicit service tiers supported by this exact model route. */
+  readonly serviceTiers?: readonly ('default' | 'priority')[]
   /** Provider-authored label shown beside the name; display data only. */
   readonly badge?: LlmModelBadge
 }

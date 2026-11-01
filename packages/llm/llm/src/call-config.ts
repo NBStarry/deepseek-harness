@@ -15,8 +15,8 @@ const AGENT_LOOP_REQUESTS = new WeakSet<GenerateOptions>()
 /** Concrete generation settings; omitted controls use the selected route's defaults. */
 export interface LlmCallControls {
   reasoningEffort?: ReasoningEffortId
-  /** Request Codex priority processing; absence disables it and other providers ignore it. */
-  serviceTier?: 'priority'
+  /** Explicit processing tier; omission leaves provider defaults unchanged. Adapters reject unsupported tiers. */
+  serviceTier?: 'default' | 'priority'
   temperature?: number
   maxTokens?: number
   stop?: string[]

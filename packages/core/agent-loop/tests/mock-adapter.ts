@@ -75,6 +75,8 @@ export class MockAdapter extends LlmAdapter {
   systemPromptUpdate?: SystemPromptUpdate
   /** Declared tool update mode of every route this adapter serves. */
   toolUpdate?: ToolUpdate
+  /** Explicit processing tiers supported by this fixture's routes. */
+  serviceTiers?: LlmResolvedModelInfo['serviceTiers']
 
   constructor(
     private script: (StreamChunk[] | ((options: GenerateOptions) => StreamChunk[]) | 'hang' | 'hang-slow' | HangAfter)[],
@@ -96,6 +98,7 @@ export class MockAdapter extends LlmAdapter {
       ...this.defaultMaxTokens === undefined ? {} : { defaultMaxTokens: this.defaultMaxTokens },
       ...this.systemPromptUpdate === undefined ? {} : { systemPromptUpdate: this.systemPromptUpdate },
       ...this.toolUpdate === undefined ? {} : { toolUpdate: this.toolUpdate },
+      ...this.serviceTiers === undefined ? {} : { serviceTiers: this.serviceTiers },
     })
   }
 

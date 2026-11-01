@@ -94,8 +94,8 @@ function selectionOf(state: ModelDirectoryState, id: string): ModelSelection | u
         provider: group.id,
         model: model.id,
         ...reasoningEffort === undefined ? {} : { reasoningEffort },
-        ...group.id === 'openai-codex' && state.current?.provider === 'openai-codex'
-          && state.current.serviceTier === 'priority' ? { serviceTier: 'priority' } : {},
+        ...state.current?.serviceTier !== undefined && model.serviceTiers?.includes(state.current.serviceTier)
+          ? { serviceTier: state.current.serviceTier } : {},
       }
     }
   }

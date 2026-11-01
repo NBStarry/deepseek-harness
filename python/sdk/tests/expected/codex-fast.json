@@ -34,7 +34,8 @@
     {
       "config": {
         "provider": "openai-codex",
-        "model": "gpt-5.4"
+        "model": "gpt-5.4",
+        "serviceTier": "default"
       },
       "reason": "change"
     },
@@ -62,7 +63,8 @@
     },
     {
       "provider": "openai-codex",
-      "model": "gpt-5.4"
+      "model": "gpt-5.4",
+      "serviceTier": "default"
     },
     {
       "provider": "openai-codex",
@@ -84,7 +86,8 @@
     },
     {
       "provider": "openai-codex",
-      "model": "gpt-5.4"
+      "model": "gpt-5.4",
+      "serviceTier": "default"
     },
     {
       "provider": "openai-codex",

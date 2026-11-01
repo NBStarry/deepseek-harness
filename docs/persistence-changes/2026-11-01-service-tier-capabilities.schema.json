@@ -1,0 +1,36 @@
+{
+  "formatVersion": 2,
+  "roots": [
+    {"key":"event:model/selection","kind":"event","event":"model/selection","surface":false,"digest":"d61dc5ca6ca41e0ede2ffe77cbc65a35ed5815586f4bd46da6854ccf61fb369c"},
+    {"key":"event:request/header","kind":"event","event":"request/header","surface":false,"digest":"09bbb27cea36ef5c8a4e02515d361d52fc736a0d7a98d4c7cff4be138b41b6c6"}
+  ],
+  "types": [],
+  "nodes": {
+    "0657d3ca5ac4e7bf": {"kind":"primitive","type":"number"},
+    "09bbb27cea36ef5c": {"kind":"object","properties":[{"name":"data","type":"a2f7696feb6860c2","optional":false},{"name":"ignorable","type":"dacf3d5f3e4ff619","optional":true},{"name":"seq","type":"0657d3ca5ac4e7bf","optional":false},{"name":"time","type":"0657d3ca5ac4e7bf","optional":false},{"name":"type","type":"3e0eff5946255ff0","optional":false}],"indices":[]},
+    "09ee052b0178d29d": {"kind":"object","properties":[{"name":"adapterDefaults","type":"326a9bfda27dda58","optional":true},{"name":"config","type":"8ced2b33e7a79cd4","optional":false},{"name":"system","type":"fcf427290c6213c2","optional":true},{"name":"tools","type":"a0baff42eb900561","optional":true}],"indices":[]},
+    "0aa62ab51b36c0e6": {"kind":"object","properties":[],"indices":[{"key":"4cd48f3e5108bd6e","value":"bbc5696e3f13c758"}]},
+    "1d5f04a03ea75fc8": {"kind":"literal","value":"model/selection"},
+    "326a9bfda27dda58": {"kind":"object","properties":[{"name":"maxTokens","type":"dacf3d5f3e4ff619","optional":true},{"name":"reasoningEffort","type":"dacf3d5f3e4ff619","optional":true}],"indices":[]},
+    "34d1ab5c5df37818": {"kind":"literal","value":"resume"},
+    "353b2fef168becab": {"kind":"union","types":["c6f0d95a6800e247","d66ba5eb62ddba9f"]},
+    "3e0eff5946255ff0": {"kind":"literal","value":"request/header"},
+    "4cd48f3e5108bd6e": {"kind":"primitive","type":"string"},
+    "4f507598cf476214": {"kind":"literal","value":"series"},
+    "530da6c0267813bb": {"kind":"union","types":["34d1ab5c5df37818","4f507598cf476214","e7ce49f12953583f","f789af5ab844827e"]},
+    "66ba70f6f068da44": {"kind":"object","properties":[{"name":"deferLoading","type":"dacf3d5f3e4ff619","optional":true},{"name":"description","type":"4cd48f3e5108bd6e","optional":false},{"name":"name","type":"4cd48f3e5108bd6e","optional":false},{"name":"parameters","type":"0aa62ab51b36c0e6","optional":false}],"indices":[]},
+    "881a2cbc5cfcc976": {"kind":"object","properties":[{"name":"model","type":"4cd48f3e5108bd6e","optional":false},{"name":"provider","type":"4cd48f3e5108bd6e","optional":false},{"name":"reasoningEffort","type":"4cd48f3e5108bd6e","optional":true},{"name":"serviceTier","type":"353b2fef168becab","optional":true}],"indices":[]},
+    "8ced2b33e7a79cd4": {"kind":"object","properties":[{"name":"maxTokens","type":"0657d3ca5ac4e7bf","optional":true},{"name":"model","type":"4cd48f3e5108bd6e","optional":false},{"name":"provider","type":"4cd48f3e5108bd6e","optional":false},{"name":"reasoningEffort","type":"4cd48f3e5108bd6e","optional":true},{"name":"serviceTier","type":"353b2fef168becab","optional":true},{"name":"stop","type":"93c33d9687613293","optional":true},{"name":"temperature","type":"0657d3ca5ac4e7bf","optional":true}],"indices":[]},
+    "93c33d9687613293": {"kind":"array","element":"4cd48f3e5108bd6e"},
+    "a0baff42eb900561": {"kind":"array","element":"66ba70f6f068da44"},
+    "a2f7696feb6860c2": {"kind":"object","properties":[{"name":"header","type":"09ee052b0178d29d","optional":false},{"name":"reason","type":"530da6c0267813bb","optional":false},{"name":"startsSeries","type":"dacf3d5f3e4ff619","optional":true}],"indices":[]},
+    "bbc5696e3f13c758": {"kind":"opaque","reason":"unknown"},
+    "c6f0d95a6800e247": {"kind":"literal","value":"priority"},
+    "d61dc5ca6ca41e0e": {"kind":"object","properties":[{"name":"data","type":"881a2cbc5cfcc976","optional":false},{"name":"ignorable","type":"dacf3d5f3e4ff619","optional":true},{"name":"seq","type":"0657d3ca5ac4e7bf","optional":false},{"name":"time","type":"0657d3ca5ac4e7bf","optional":false},{"name":"type","type":"1d5f04a03ea75fc8","optional":false}],"indices":[]},
+    "d66ba5eb62ddba9f": {"kind":"literal","value":"default"},
+    "dacf3d5f3e4ff619": {"kind":"literal","value":true},
+    "e7ce49f12953583f": {"kind":"literal","value":"initial"},
+    "f789af5ab844827e": {"kind":"literal","value":"change"},
+    "fcf427290c6213c2": {"kind":"primitive","type":"never"}
+  }
+}

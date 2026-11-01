@@ -76,6 +76,13 @@ const ANTHROPIC_TOOL_UPDATE_PLACEHOLDER: ToolSchema = {
   parameters: { type: 'object', properties: {} },
 }
 
+/** Native processing tiers are protocol options, independent of the configured provider route. */
+function serviceTierInfo(model: Model<Api>): Pick<LlmModelInfo, 'serviceTiers'> {
+  return model.api === 'openai-responses' || model.api === 'openai-codex-responses'
+    ? { serviceTiers: ['default', 'priority'] }
+    : {}
+}
+
 /** One resolution's frozen view: the profiles and the collection built from them. */
 interface PiAiSnapshot {
   /** The resolved profiles this collection was built from, used as its identity. */
@@ -310,6 +317,7 @@ export class PiAiAdapter extends LlmAdapter {
         id: model.id,
         name: model.name,
         inputModalities: [...model.input],
+        ...serviceTierInfo(model),
       }))
     })
   }
@@ -337,6 +345,7 @@ export class PiAiAdapter extends LlmAdapter {
       id: model,
       name: resolvedModel.name,
       inputModalities: [...resolvedModel.input],
+      ...serviceTierInfo(resolvedModel),
       context: { contextWindow: resolvedModel.contextWindow },
       ...configuredMaxTokens === undefined ? {} : { defaultMaxTokens: configuredMaxTokens },
       ...reasoningInfo(resolvedModel, defaultLevel),
@@ -370,6 +379,9 @@ export class PiAiAdapter extends LlmAdapter {
     // the one it started with and the next call picks up the new one.
     const profile = this.profileOf(snapshot, options.provider)
     const model = this.modelOf(snapshot, options.provider, options.model)
+    if (options.serviceTier !== undefined && !serviceTierInfo(model).serviceTiers?.includes(options.serviceTier)) {
+      throw new LlmError(`pi-ai API "${model.api}" does not support service tier "${options.serviceTier}"`, 'UNSUPPORTED_OPTION')
+    }
     const updates = conversationUpdates(model)
     // pi-ai collapses Anthropic tool updates without an initially active declaration.
     const tools = options.tools ?? []
@@ -428,8 +440,8 @@ export class PiAiAdapter extends LlmAdapter {
       }
       // pi-ai 1.3 streamSimple drops serviceTier. Its full stream entry preserves
       // native options and still resolves collection-owned OAuth and transport.
-      const events = options.serviceTier === 'priority' && model.provider === 'openai-codex'
-        && hasApi(model, 'openai-codex-responses')
+      const events = options.serviceTier !== undefined
+        && (hasApi(model, 'openai-codex-responses') || hasApi(model, 'openai-responses'))
         ? snapshot.models.stream(model, context, {
           ...buildBaseOptions(model, normalizeContext(context), streamOptions),
           ...streamOptions.reasoning === undefined ? {} : { reasoningEffort: streamOptions.reasoning },

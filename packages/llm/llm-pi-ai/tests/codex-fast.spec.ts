@@ -19,7 +19,19 @@ function captureRequests() {
       : body instanceof Uint8Array ? (compressed ? zstdDecompressSync(body) : Buffer.from(body)).toString()
         : (() => { throw new Error('unexpected SDK request body') })()
     bodies.push(JSON.parse(text) as Record<string, unknown>)
-    return new Response('{"error":{"message":"offline transport stop"}}', { status: 400 })
+    const item = { type: 'message', id: 'offline-message', role: 'assistant', content: [{ type: 'output_text', text: 'ok', annotations: [] }] }
+    const events = [
+      { type: 'response.created', response: { id: 'offline-response' } },
+      { type: 'response.output_item.added', output_index: 0, item },
+      { type: 'response.output_item.done', output_index: 0, item },
+      { type: 'response.completed', response: {
+        id: 'offline-response', status: 'completed', output: [item],
+        usage: { input_tokens: 3, output_tokens: 1, total_tokens: 4 },
+      } },
+    ]
+    return new Response(events.map(event => `data: ${JSON.stringify(event)}\n\n`).join(''), {
+      headers: { 'content-type': 'text/event-stream' },
+    })
   })
   vi.stubGlobal('fetch', fetch)
   return { bodies, fetch }
@@ -37,7 +49,7 @@ function adapterOf(provider: string, profile: PiAiProviderProfile) {
 async function drain(adapter: PiAiAdapter, options: GenerateOptions) {
   const chunks: StreamChunk[] = []
   for await (const chunk of adapter.stream(options)) chunks.push(chunk)
-  expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'error' } })
+  expect(chunks.at(-1)).toEqual(expect.objectContaining({ type: 'finish', reason: { kind: 'stop' } }))
 }
 
 describe('native per-request Codex priority transport', () => {
@@ -52,13 +64,29 @@ describe('native per-request Codex priority transport', () => {
     }
     await drain(adapter, options)
     await drain(adapter, { ...options, serviceTier: 'priority' })
+    await drain(adapter, { ...options, serviceTier: 'default' })
     await drain(adapter, options)
-    expect(fetch).toHaveBeenCalledTimes(3)
-    expect(bodies.map(body => body.service_tier)).toEqual([undefined, 'priority', undefined])
+    expect(fetch).toHaveBeenCalledTimes(4)
+    expect(bodies.map(body => body.service_tier)).toEqual([undefined, 'priority', 'default', undefined])
     expect(bodies[0]).not.toHaveProperty('service_tier')
-    expect(bodies[2]).not.toHaveProperty('service_tier')
+    expect(bodies[3]).not.toHaveProperty('service_tier')
     expect(bodies[1]?.reasoning).toEqual(bodies[0]?.reasoning)
     expect(bodies[1]?.reasoning).toMatchObject({ effort: model.thinkingLevelMap?.high ?? 'high' })
+  })
+
+  it('maps tiers by Responses protocol even on a custom provider route', async () => {
+    const { bodies } = captureRequests()
+    const adapter = adapterOf('custom-responses', {
+      api: 'openai-responses', apiKeyEnv: 'OFFLINE_UNUSED', baseURL: 'https://offline.invalid/v1',
+      models: [{ id: 'offline-model', contextWindow: 8192, maxTokens: 1024 }],
+    })
+    const options: GenerateOptions = { provider: 'custom-responses', model: 'offline-model', messages: [] }
+    for (const serviceTier of [undefined, 'default', 'priority'] as const) {
+      await drain(adapter, { ...options, ...serviceTier === undefined ? {} : { serviceTier } })
+    }
+    expect(bodies.map(body => body.service_tier)).toEqual([undefined, 'default', 'priority'])
+    expect(await adapter.resolveModel(options.provider, options.model)).toMatchObject({ serviceTiers: ['default', 'priority'] })
+    expect(await adapter.listModels(options.provider)).toMatchObject([{ serviceTiers: ['default', 'priority'] }])
   })
 
   it('retains collection-owned OAuth authentication on the priority path', async () => {
@@ -82,8 +110,12 @@ describe('native per-request Codex priority transport', () => {
       api: 'openai-completions', apiKeyEnv: 'OFFLINE_UNUSED', baseURL: 'https://offline.invalid/v1',
       models: [{ id: 'offline-model', contextWindow: 8192, maxTokens: 1024 }],
     })
-    await drain(adapter, { provider, model: 'offline-model', messages: [], serviceTier: 'priority' })
-    expect(fetch).toHaveBeenCalledOnce()
-    expect(bodies[0]).not.toHaveProperty('service_tier')
+    for (const serviceTier of ['default', 'priority'] as const) {
+      await expect(drain(adapter, { provider, model: 'offline-model', messages: [], serviceTier }))
+        .rejects.toMatchObject({ code: 'UNSUPPORTED_OPTION' })
+    }
+    expect(fetch).not.toHaveBeenCalled()
+    expect(bodies).toEqual([])
+    expect(await adapter.resolveModel(provider, 'offline-model')).not.toHaveProperty('serviceTiers')
   })
 })

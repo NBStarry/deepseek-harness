@@ -492,6 +492,7 @@ describe('provider profile lifecycle', () => {
     expect(models.find(model => model.id === 'gpt-4.1')).toEqual({
       provider: 'openai', id: 'gpt-4.1', name: 'GPT-4.1',
       inputModalities: ['text', 'image'],
+      serviceTiers: ['default', 'priority'],
     })
     expect(models.every(model => model.provider === 'openai')).toBe(true)
     const info = await ctx.llm.resolveModelInfo('openai', 'gpt-4.1')

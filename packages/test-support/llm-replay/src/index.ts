@@ -99,6 +99,8 @@ export interface ReplayModelConfig {
    * no image pricing.
    */
   imageRequestTokens?: number
+  /** Optional service tiers advertised by the keyless model route. */
+  serviceTiers?: readonly ('default' | 'priority')[]
   /** Optional reasoning-effort ids from least to greatest selectable effort. */
   reasoningEfforts?: string[]
   /**
@@ -904,6 +906,7 @@ class ReplayAdapter extends LlmAdapter {
       name: model.name ?? model.id,
       ...model.description === undefined ? {} : { description: model.description },
       ...model.inputModalities === undefined ? {} : { inputModalities: [...model.inputModalities] },
+      ...model.serviceTiers === undefined ? {} : { serviceTiers: [...model.serviceTiers] },
       ...model.badge === undefined ? {} : { badge: model.badge },
     })))
   }
@@ -933,6 +936,9 @@ class ReplayAdapter extends LlmAdapter {
       ...configuredModel?.toolUpdate === undefined
         ? {}
         : { toolUpdate: configuredModel.toolUpdate },
+      ...configuredModel?.serviceTiers === undefined
+        ? {}
+        : { serviceTiers: [...configuredModel.serviceTiers] },
       ...configuredModel?.reasoningEfforts === undefined
         ? {}
         : {
@@ -1192,6 +1198,14 @@ function validateConfiguredModels(providers: ReplayProviderConfig[] | undefined)
         throw new Error(
           `llm-replay: provider "${provider.id}" model "${model.id}" systemPromptUpdate `
           + 'must be "in-history" when present',
+        )
+      }
+      const serviceTiers: unknown = model.serviceTiers
+      if (serviceTiers !== undefined && (!Array.isArray(serviceTiers)
+        || !serviceTiers.every((tier: unknown) => tier === 'default' || tier === 'priority'))) {
+        throw new Error(
+          `llm-replay: provider "${provider.id}" model "${model.id}" serviceTiers `
+          + 'must contain only "default" and "priority"',
         )
       }
       const toolUpdate: unknown = model.toolUpdate

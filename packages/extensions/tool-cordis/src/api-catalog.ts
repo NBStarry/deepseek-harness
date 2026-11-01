@@ -1990,7 +1990,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'async resolveCallConfig(config: LlmCallConfig, signal?: AbortSignal): Promise<LlmCallConfig>',
-        description: 'Validate a conversation call config against its exact model capability and materialize adapter-configured defaults. Unsupported explicit efforts reject before provider I/O; no clamping or aliasing is performed. This standalone query does not bind a later dispatch; use prepareCall when logging and streaming must share one adapter registration.',
+        description: 'Validate a conversation call config against its exact model capability and materialize adapter-configured defaults. Unsupported explicit efforts or tiers reject before provider I/O; no clamping or aliasing is performed. This standalone query does not bind a later dispatch; use prepareCall when logging and streaming must share one adapter registration.',
         parameters: [{ name: 'config', description: 'provider/model route and optional request controls.' }, { name: 'signal', description: 'optional cancellation for adapter-owned capability lookup.' }],
         returns: 'a detached config only when a default must be materialized.',
       },
@@ -6441,7 +6441,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'GenerateOptions',
-    declaration: 'export interface GenerateOptions {\n    provider: string;\n    model: string;\n    reasoningEffort?: ReasoningEffortId;\n    serviceTier?: \'priority\';\n    messages: RequestMessage[];\n    system?: string;\n    tools?: ToolSchema[];\n    toolHistory?: ToolHistory;\n    temperature?: number;\n    maxTokens?: number;\n    stop?: string[];\n    signal?: AbortSignal;\n    sessionId?: Branded<\'SessionId\'>;\n    purpose?: \'compaction\' | \'session-title\';\n}',
+    declaration: 'export interface GenerateOptions {\n    provider: string;\n    model: string;\n    reasoningEffort?: ReasoningEffortId;\n    serviceTier?: \'default\' | \'priority\';\n    messages: RequestMessage[];\n    system?: string;\n    tools?: ToolSchema[];\n    toolHistory?: ToolHistory;\n    temperature?: number;\n    maxTokens?: number;\n    stop?: string[];\n    signal?: AbortSignal;\n    sessionId?: Branded<\'SessionId\'>;\n    purpose?: \'compaction\' | \'session-title\';\n}',
   },
   {
     name: 'GenericCallView',
@@ -6797,7 +6797,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'LlmCallControls',
-    declaration: 'export interface LlmCallControls {\n    reasoningEffort?: ReasoningEffortId;\n    serviceTier?: \'priority\';\n    temperature?: number;\n    maxTokens?: number;\n    stop?: string[];\n}',
+    declaration: 'export interface LlmCallControls {\n    reasoningEffort?: ReasoningEffortId;\n    serviceTier?: \'default\' | \'priority\';\n    temperature?: number;\n    maxTokens?: number;\n    stop?: string[];\n}',
   },
   {
     name: 'LlmConfigurableProvider',
@@ -6837,7 +6837,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'LlmModelInfo',
-    declaration: 'export interface LlmModelInfo {\n    provider: string;\n    id: string;\n    name: string;\n    description?: string;\n    inputModalities?: readonly ModelModality[];\n    badge?: LlmModelBadge;\n}',
+    declaration: 'export interface LlmModelInfo {\n    provider: string;\n    id: string;\n    name: string;\n    description?: string;\n    inputModalities?: readonly ModelModality[];\n    serviceTiers?: readonly (\'default\' | \'priority\')[];\n    badge?: LlmModelBadge;\n}',
   },
   {
     name: 'LlmModelReasoningInfo',
@@ -7129,7 +7129,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ModelCatalogModel',
-    declaration: 'export interface ModelCatalogModel {\n    readonly id: string;\n    readonly name: string;\n    readonly description?: string;\n    readonly reasoning?: ModelReasoning;\n    readonly badge?: LlmModelBadge;\n}',
+    declaration: 'export interface ModelCatalogModel {\n    readonly id: string;\n    readonly name: string;\n    readonly description?: string;\n    readonly reasoning?: ModelReasoning;\n    readonly serviceTiers?: readonly (\'default\' | \'priority\')[];\n    readonly badge?: LlmModelBadge;\n}',
   },
   {
     name: 'ModelMessageSource',

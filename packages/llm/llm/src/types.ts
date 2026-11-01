@@ -377,6 +377,8 @@ export interface LlmModelInfo {
   description?: string
   /** Accepted request modalities; absent means unknown, while an explicit omission is negative capability. */
   inputModalities?: readonly ModelModality[]
+  /** Explicit processing tiers the adapter supports; absent advertises no selectable tier, not an effective provider tier. */
+  serviceTiers?: readonly ('default' | 'priority')[]
   /**
    * Selector label advertised by catalog discovery; exact-route resolution
    * omits it, and no model request or Session event carries it.
@@ -558,8 +560,8 @@ export interface GenerateOptions {
   model: string
   /** Adapter-owned reasoning effort selected for this exact model. */
   reasoningEffort?: ReasoningEffortId
-  /** Request priority processing on the openai-codex Codex API only; absent sends no tier. */
-  serviceTier?: 'priority'
+  /** Explicit processing tier; absent sends no tier. Adapters reject unsupported explicit values. */
+  serviceTier?: 'default' | 'priority'
   /**
    * Ordered conversation messages, exactly as the provider sees them. A
    * loop-built request passes the derived history (dsh-agent-loop), whose
