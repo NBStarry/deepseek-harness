@@ -199,7 +199,7 @@ export function ModelSelect(
       ;(target ?? triggerRef.current)?.focus()
       return
     }
-    const cell = itemRefs.current[intent === 'effort' ? 1 : 0]
+    const cell = itemRefs.current[intent === 'effort' ? (state.current?.provider === 'openai-codex' ? 2 : 1) : 0]
     ;(cell !== null && cell !== undefined && !cell.disabled ? cell : triggerRef.current)?.focus()
   }, [open, pane, showSearch])
 
@@ -404,7 +404,11 @@ export function ModelSelect(
       closeAfterSelection()
       return
     }
-    submit(selection)
+    submit({
+      ...selection,
+      ...selection.provider === 'openai-codex' && state.current?.provider === 'openai-codex'
+        && state.current.serviceTier === 'priority' ? { serviceTier: 'priority' } : {},
+    })
   }
 
   const chooseEffort = (effort: string | undefined): void => {
@@ -417,6 +421,8 @@ export function ModelSelect(
       provider: state.current.provider,
       model: state.current.model,
       ...effort === undefined ? {} : { reasoningEffort: effort },
+      ...state.current.provider === 'openai-codex' && state.current.serviceTier === 'priority'
+        ? { serviceTier: 'priority' } : {},
     }
     submit(selection)
   }
@@ -426,7 +432,8 @@ export function ModelSelect(
     ? t('trigger.loading')
     : currentChoice?.model.name
       ?? t('trigger.fallback')
-  const triggerLabel = effortLabel === undefined ? modelLabel : `${modelLabel} · ${effortLabel}`
+  const fast = state.current?.provider === 'openai-codex' && state.current.serviceTier === 'priority'
+  const triggerLabel = [modelLabel, effortLabel, fast ? t('menu.fast') : undefined].filter(value => value !== undefined).join(' · ')
   const triggerAria = waiting
     ? t('trigger.loading')
     : currentChoice === undefined
@@ -474,7 +481,7 @@ export function ModelSelect(
         ref={triggerRef}
         type="button"
         className={css.trigger}
-        aria-label={triggerAria}
+        aria-label={fast ? `${triggerAria} · ${t('menu.fast')}` : triggerAria}
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={open ? `${id}-menu` : undefined}
@@ -496,6 +503,7 @@ export function ModelSelect(
           {currentChoice === undefined ? modelLabel : renderModelLabel(currentChoice.group.provider, currentChoice.model, 'trigger', true)}
         </span>
         {effortLabel !== undefined && <span className={css.triggerEffort}>{effortLabel}</span>}
+        {fast && <span className={css.triggerEffort}>{t('menu.fast')}</span>}
         {busy
           ? <StateDot state="ongoing" />
           : <IconChevronDownOutlineRegular className={clsx(css.chevron, open && css.chevronOpen)} />}
@@ -523,6 +531,22 @@ export function ModelSelect(
                 </span>
                 <IconChevronRightOutlineRegular className={css.cellChevron} />
               </button>
+              {state.current?.provider === 'openai-codex' && (
+                <button
+                  ref={itemRef()} type="button" role="menuitemcheckbox" className={css.cell}
+                  aria-checked={state.current.serviceTier === 'priority'} disabled={locked || busy}
+                  onClick={() => {
+                    if (state.current === null) return
+                    const { serviceTier, ...selection } = state.current
+                    submit(serviceTier === 'priority' ? selection : { ...selection, serviceTier: 'priority' })
+                  }}
+                >
+                  <span className={css.cellLabel}>{t('menu.fast')}</span>
+                  <span className={css.check}>
+                    {busy ? <StateDot state="ongoing" /> : state.current.serviceTier === 'priority' ? <IconCheckOutlineRegular /> : null}
+                  </span>
+                </button>
+              )}
               {reasoning !== undefined && (
                 <button ref={itemRef()} type="button" role="menuitem" className={css.cell} onClick={() => { drill('effort') }}>
                   <span className={css.cellLabel}>{t('menu.effort')}</span>

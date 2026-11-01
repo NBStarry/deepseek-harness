@@ -380,6 +380,9 @@ export class AgentLoop extends Service implements AgentFactory {
       && previous.reasoningEffort !== undefined) {
       selection.reasoningEffort = previous.reasoningEffort
     }
+    if (previous?.provider === provider && previous.model === model && previous.serviceTier !== undefined) {
+      selection.serviceTier = previous.serviceTier
+    }
     agent.model.select(selection)
   }
 

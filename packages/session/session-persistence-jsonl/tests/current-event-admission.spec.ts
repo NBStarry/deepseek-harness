@@ -1,11 +1,11 @@
 import { Context } from '@deepseek-ai/cordis'
-import { SESSION_FORMAT_VERSION, SessionId, SessionSeq } from '@deepseek-ai/dsh-session'
+import { SESSION_FORMAT_VERSION, Session, SessionId, SessionSeq } from '@deepseek-ai/dsh-session'
 import * as JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { generationLogPath, scanLog } from '../src/format.ts'
+import { generationLogPath, scanLog, SessionLogScanner } from '../src/format.ts'
 
 const id = SessionId('current-admission')
 const header = { type: 'session', version: SESSION_FORMAT_VERSION, id, createdAt: 1000, isSeeded: false, delegationDepth: 0 }
@@ -45,6 +45,56 @@ describe('current event admission at EOF', () => {
     await writeFile(path, bytes)
     return path
   }
+
+  it.each(['strict', 'recoverable'] as const)('preserves priority on/off across committed turns and resume in %s scans', async (recovery) => {
+    const route = { provider: 'openai-codex', model: 'gpt-5.4' }
+    const priority = { ...route, serviceTier: 'priority' }
+    const events = [
+      { type: 'model/selection', data: priority },
+      { type: 'turn/start', data: { turn: 1 } },
+      { type: 'step/start', data: { turn: 1, step: 1 } },
+      { type: 'request/header', data: { header: { config: priority }, reason: 'initial' } },
+      { type: 'step/end', data: { turn: 1, step: 1 } },
+      { type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } },
+      { type: 'session/end-seed', data: {} },
+      { type: 'turn/start', data: { turn: 2 } },
+      { type: 'step/start', data: { turn: 2, step: 1 } },
+      { type: 'request/header', data: { header: { config: priority }, reason: 'resume' } },
+      { type: 'step/end', data: { turn: 2, step: 1 } },
+      { type: 'turn/end', data: { turn: 2, reason: { kind: 'completed' } } },
+      { type: 'model/selection', data: route },
+      { type: 'turn/start', data: { turn: 3 } },
+      { type: 'step/start', data: { turn: 3, step: 1 } },
+      { type: 'request/header', data: { header: { config: route }, reason: 'change' } },
+      { type: 'step/end', data: { turn: 3, step: 1 } },
+      { type: 'turn/end', data: { turn: 3, reason: { kind: 'completed' } } },
+    ].map((event, seq) => ({ ...event, seq, time: seq + 1 }))
+    const headerBytes = Buffer.from(JSON.stringify(header) + '\n')
+    const eventBytes = Buffer.from(events.map(event => JSON.stringify(event)).join('\n') + '\n')
+    const bytes = Buffer.concat([headerBytes, eventBytes])
+    const scanner = new SessionLogScanner(headerBytes, recovery)
+    scanner.write(eventBytes)
+    const scanned = scanner.finish()
+    expect(scanned.events).toEqual(events)
+    expect(scanned.committedBytes).toBe(bytes.length)
+    const restored = Session.fromRestore(id, scanned.events, scanned.meta, scanned.inheritedEventCount, 'detached')
+    for (const event of events) expect(restored.eventAt(SessionSeq(event.seq))).toEqual(event)
+    expect(restored.eventAt(SessionSeq(0))?.data).toHaveProperty('serviceTier', 'priority')
+    expect(restored.eventAt(SessionSeq(12))?.data).not.toHaveProperty('serviceTier')
+
+    const path = await store(bytes)
+    const handle = await ctx.sessionPersistence.open(id, 'write')
+    try {
+      const stored = await handle.read()
+      expect(stored.events).toEqual(events)
+      const resumed = Session.fromRestore(id, stored.events, handle.header, handle.inheritedEventCount, stored.eventState)
+      expect(resumed.eventAt(SessionSeq(9))).toEqual(events[9])
+      expect(resumed.eventAt(SessionSeq(15))).toEqual(events[15])
+    } finally {
+      await handle.close()
+    }
+    expect(await readFile(path)).toEqual(bytes)
+  })
 
   it.each([{ surfaceOp: 'append' }, { sourceEventSeqs: [] }])('refuses unknown required metadata %j without truncating a provider append', async (metadata) => {
     const event = { type: 'future/required', seq: 0, time: 1, data: {}, ...metadata }

@@ -89,6 +89,8 @@ export interface ModelSelection {
   readonly provider: string
   readonly model: string
   readonly reasoningEffort?: string
+  /** Session-only priority processing; omitted means off. */
+  readonly serviceTier?: 'priority'
 }
 
 /** One adapter-owned reasoning effort for an exact model route. */

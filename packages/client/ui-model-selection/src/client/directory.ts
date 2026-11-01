@@ -103,6 +103,7 @@ export class ModelDirectory {
       ...selection.reasoningEffort === undefined
         ? {}
         : { reasoningEffort: selection.reasoningEffort },
+      ...selection.serviceTier === undefined ? {} : { serviceTier: selection.serviceTier },
     })
     if (this.disposed || generation !== this.generation) {
       return result.ok ? { ok: true, value: undefined } : result

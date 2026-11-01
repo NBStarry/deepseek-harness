@@ -27,10 +27,15 @@ export interface ModelSelectionProjectionState {
  * @param provider - provider route.
  * @param model - provider-owned model id.
  * @param reasoningEffort - explicit effort; omission follows adapter defaults.
+ * @param serviceTier - explicit priority processing; omission disables it.
  * @returns a detached selection.
  */
-function toSelection(provider: string, model: string, reasoningEffort: ReasoningEffortId | undefined): ModelSelection {
-  return { provider, model, ...reasoningEffort === undefined ? {} : { reasoningEffort } }
+function toSelection(provider: string, model: string, reasoningEffort: ReasoningEffortId | undefined, serviceTier?: 'priority'): ModelSelection {
+  return {
+    provider, model,
+    ...reasoningEffort === undefined ? {} : { reasoningEffort },
+    ...serviceTier === undefined ? {} : { serviceTier },
+  }
 }
 
 /**
@@ -51,18 +56,24 @@ function sameRoute(left: ModelSelection, right: ModelSelection): boolean {
  */
 function sameModelSelection(left: ModelSelection | null, right: ModelSelection | null): boolean {
   return left === right || (left !== null && right !== null
-    && sameRoute(left, right) && left.reasoningEffort === right.reasoningEffort)
+    && sameRoute(left, right) && left.reasoningEffort === right.reasoningEffort
+    && left.serviceTier === right.serviceTier)
 }
 
 /** Selection a recorded request used, omitting an effort the adapter defaulted. */
 function selectionOfHeader({ config, adapterDefaults }: EpochHeader): ModelSelection {
-  return toSelection(config.provider, config.model, adapterDefaults?.reasoningEffort === true ? undefined : config.reasoningEffort)
+  return toSelection(
+    config.provider, config.model,
+    adapterDefaults?.reasoningEffort === true ? undefined : config.reasoningEffort,
+    config.serviceTier,
+  )
 }
 
 const selectionSchema = z.object({
   provider: z.string().min(1),
   model: z.string().min(1),
   reasoningEffort: z.string().min(1).transform(ReasoningEffortId).exactOptional(),
+  serviceTier: z.literal('priority').exactOptional(),
 }).nullable()
 
 /**
@@ -71,7 +82,7 @@ const selectionSchema = z.object({
  */
 export const modelSelectionProjectionDefinition: Required<ProjectionDefinition<'modelSelection', ModelSelectionProjectionState>> = {
   key: 'modelSelection',
-  stateVersion: 3,
+  stateVersion: 4,
   stateSchema: z.object({ lastUsed: selectionSchema, pending: selectionSchema }),
   init: () => ({ lastUsed: null, pending: null }),
   apply: (state, event) => {
@@ -111,7 +122,7 @@ export class AgentModel implements Model {
 
   select(selection: Readonly<ModelSelection>): void {
     if (sameModelSelection(this.recordedSelection(), selection)) return
-    this.session.append('model/selection', toSelection(selection.provider, selection.model, selection.reasoningEffort))
+    this.session.append('model/selection', toSelection(selection.provider, selection.model, selection.reasoningEffort, selection.serviceTier))
   }
 
   private recordedSelection(): ModelSelection | null {

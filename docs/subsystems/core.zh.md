@@ -234,10 +234,11 @@ interface Model {
   /**
    * Replace the next step's complete selection. Omitted effort follows adapter
    * defaults without inheriting a previous effort or resolving defaults here.
+   * Omitted service tier disables priority processing for future steps.
    * An equal recorded choice is a no-op; an options-only fallback is
    * always recorded. Callers own model availability and capability validation.
    * The append uses the Session's existing persistence and failure guarantees.
-   * @param selection - complete provider, model, and optional explicit effort.
+   * @param selection - complete provider, model, optional explicit effort and service tier.
    */
   select(selection: Readonly<ModelSelection>): void
 
@@ -245,7 +246,7 @@ interface Model {
 ```
 
 ```ts type-equiv
-/** Complete provider, model, and optional reasoning effort chosen for one Session's model steps. */
+/** Complete provider, model, reasoning effort, and service tier chosen for one Session's model steps. */
 interface ModelSelection {
   /** Registered provider route. */
   provider: string
@@ -253,6 +254,8 @@ interface ModelSelection {
   model: string
   /** Adapter-owned reasoning effort, or provider/default behavior when absent. */
   reasoningEffort?: ReasoningEffortId
+  /** Request Codex priority processing; absence disables Fast mode. Other providers ignore it. */
+  serviceTier?: 'priority'
 }
 ```
 

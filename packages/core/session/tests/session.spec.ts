@@ -552,6 +552,20 @@ describe('Session', () => {
     }
   })
 
+  it('round-trips priority and rejects unsupported durable service tiers', () => {
+    const valid = {
+      type: 'request/header', seq: SessionSeq(0), time: 1,
+      data: { header: { config: { provider: 'mock', model: 'model', serviceTier: 'priority' } }, reason: 'initial' },
+    } as const
+    expect(Session.create(SessionId('priority-tier'), [valid]).snapshotEvents()[0]).toEqual(valid)
+    for (const serviceTier of ['auto', '', false, 1]) {
+      const invalid = structuredClone(valid)
+      Object.assign(invalid.data.header.config, { serviceTier })
+      expect(() => Session.create(SessionId('invalid-tier'), [invalid]))
+        .toThrow('seed request/header at index 0 has an invalid serviceTier')
+    }
+  })
+
   it('round-trips adapter-default markers and rejects invalid durable values', () => {
     const valid = {
       type: 'request/header',

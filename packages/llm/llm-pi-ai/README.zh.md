@@ -106,6 +106,8 @@ profile 的 `models` 列表会替换而非扩展路由的已安装目录；每�
 
 对于自托管 Chat Completions 端点，`thinkingTokenBudgetField` 选择推理预算参数，`vllmPriority` 在服务端启用优先级调度时设置整数调度优先级。模板参数接受 `$var: thinking.budget`。`openai-responses` 网关可设置 `supportsMaxOutputTokens: false` 来省略 `max_output_tokens`；Azure 与 Codex 传输会忽略这个共享兼容字段。这些控制均需显式启用；目录拥有的 Anthropic effort 和回退能力不是可配置开关。
 
+`GenerateOptions.serviceTier: 'priority'` 仅为使用 `openai-codex-responses` 的 `openai-codex` 路由发送 `service_tier: 'priority'`。省略则不发送层级；其他路由和协议不变。优先级请求通过 pi-ai 的完整 stream 入口及其公开基础选项解析器执行，保留集合拥有的认证、推理、传输与计价。没有部署设置会全局启用 Fast。
+
 ### 运行时更改配置
 
 每次操作捕获当前 `providers` Config 引用。新增或修改的 provider 配置在表单持久化前验证；未更改的目录故障仍可编辑。路由集合或重试策略变化时原子更新注册；如果其他适配器已拥有所请求的路由，则保留先前路由。

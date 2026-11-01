@@ -1,0 +1,16 @@
+- id: skill-filesystem
+  config:
+    includeDefaultRoots: false
+- id: llm-deepseek
+  disabled: true
+- id: time-context
+  disabled: true
+- id: session-log-deepseek
+  disabled: true
+- id: session-persistence-jsonl
+  config:
+    root: !!js dshHomePath('sessions')
+    compression: none
+- insert:
+    - id: codex-fast-selection-fixture
+      name: './selection.mjs'

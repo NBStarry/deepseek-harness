@@ -1,0 +1,10 @@
+version: 1
+scenario: codex-fast
+profile: sdk
+composition: sdk-codex-fast
+recording: authored
+header:
+  class: sdk-codex-fast
+  pin: true
+  changes: 5
+  promptChanges: 1

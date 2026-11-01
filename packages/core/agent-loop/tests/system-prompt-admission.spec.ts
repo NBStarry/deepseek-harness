@@ -487,6 +487,55 @@ describe('prepared-route prompt admission', () => {
     })
   })
 
+  it('logs tier-only header changes and never inherits priority when switched off', async () => {
+    const h = await harness()
+    const selection = { provider: 'capable', model: 'model' }
+    await send(h.agent, 'default')
+    h.agent.model.select({ ...selection, serviceTier: 'priority' })
+    await send(h.agent, 'fast')
+    h.agent.model.select(selection)
+    await send(h.agent, 'off')
+    await send(h.agent, 'still off')
+    expect(h.capable.requests.map(request => request.serviceTier)).toEqual([undefined, 'priority', undefined, undefined])
+    const headers = h.agent.session.snapshotEvents().filter(event => event.type === 'request/header')
+    expect(headers.map(event => [event.data.reason, event.data.header.config.serviceTier]))
+      .toEqual([['initial', undefined], ['change', 'priority'], ['change', undefined]])
+    expect(headers.at(-1)?.data.header.config).not.toHaveProperty('serviceTier')
+  })
+
+  it('retains priority across a retry when Fast is switched off during the failed attempt', async () => {
+    const adapter = new MockAdapter([
+      () => { throw new LlmError('retry this request', 'SERVER') },
+      textResponse('recovered'), textResponse('off'),
+    ])
+    const h = await harness(adapter)
+    const selection = { provider: 'capable', model: 'model' }
+    h.agent.model.select({ ...selection, serviceTier: 'priority' })
+    h.ctx.on('agent/request-error', () => {
+      h.agent.model.select(selection)
+      return Promise.resolve({ kind: 'retry' as const })
+    })
+    await send(h.agent, 'retry')
+    expect(adapter.requests.map(request => request.serviceTier)).toEqual(['priority', 'priority'])
+    expect(h.agent.model.current()).toEqual(selection)
+    await send(h.agent, 'next step')
+    expect(adapter.requests.map(request => request.serviceTier)).toEqual(['priority', 'priority', undefined])
+  })
+
+  it.each([undefined, 'priority'] as const)('rejects request-hook changes to the captured tier %s', async (selected) => {
+    const h = await harness()
+    h.agent.model.select({ provider: 'capable', model: 'model', ...selected === undefined ? {} : { serviceTier: selected } })
+    h.ctx.on('agent/request', async (_payload, next) => {
+      const { serviceTier: _tier, ...config } = await next()
+      return { ...config, ...selected === undefined ? { serviceTier: 'priority' as const } : {} }
+    })
+    await send(h.agent, 'reject')
+    expect(h.capable.requests).toEqual([])
+    expect(h.agent.session.snapshotEvents().at(-1)).toMatchObject({
+      type: 'turn/end', data: { reason: { kind: 'error', error: { message: expect.stringContaining('proposed service tier') } } },
+    })
+  })
+
   it('retains the captured selection for a retry and uses a pending choice on the next step', async () => {
     const adapter = new MockAdapter([
       () => { throw new LlmError('retry this request', 'SERVER') },

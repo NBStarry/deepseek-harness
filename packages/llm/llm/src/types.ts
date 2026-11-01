@@ -558,6 +558,8 @@ export interface GenerateOptions {
   model: string
   /** Adapter-owned reasoning effort selected for this exact model. */
   reasoningEffort?: ReasoningEffortId
+  /** Request priority processing on the openai-codex Codex API only; absent sends no tier. */
+  serviceTier?: 'priority'
   /**
    * Ordered conversation messages, exactly as the provider sees them. A
    * loop-built request passes the derived history (dsh-agent-loop), whose

@@ -63,10 +63,11 @@ export interface Model {
   /**
    * Replace the next step's complete selection. Omitted effort follows adapter
    * defaults without inheriting a previous effort or resolving defaults here.
+   * Omitted service tier disables priority processing for future steps.
    * An equal recorded choice is a no-op; an options-only fallback is
    * always recorded. Callers own model availability and capability validation.
    * The append uses the Session's existing persistence and failure guarantees.
-   * @param selection - complete provider, model, and optional explicit effort.
+   * @param selection - complete provider, model, optional explicit effort and service tier.
    */
   select(selection: Readonly<ModelSelection>): void
 }
@@ -352,8 +353,8 @@ declare module '@deepseek-ai/cordis' {
      * Replace the frozen call configuration. `await next()` yields the config
      * the machine would use (the step's model selection with agent options on
      * the first request, the logged header's controls afterwards); a
-     * replacement may adjust controls but must keep the provider, model, and
-     * reasoning effort selection. On step admission,
+     * replacement may adjust controls but must keep the provider, model,
+     * reasoning effort, and service tier selection. On step admission,
      * this runs after assembly and `step/start`, before the system prompt and
      * accepted user batch are committed. Cancellation here or during subsequent
      * `prepareCall()` resolution commits neither. The prepared call capability

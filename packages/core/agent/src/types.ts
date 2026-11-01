@@ -75,7 +75,7 @@ export interface TurnBoundaryProjection {
   readonly lastTurn: number
 }
 
-/** Complete provider, model, and optional reasoning effort chosen for one Session's model steps. */
+/** Complete provider, model, reasoning effort, and service tier chosen for one Session's model steps. */
 export interface ModelSelection {
   /** Registered provider route. */
   provider: string
@@ -83,6 +83,8 @@ export interface ModelSelection {
   model: string
   /** Adapter-owned reasoning effort, or provider/default behavior when absent. */
   reasoningEffort?: ReasoningEffortId
+  /** Request Codex priority processing; absence disables Fast mode. Other providers ignore it. */
+  serviceTier?: 'priority'
 }
 
 /** Client view of the durable model-selection fold. */

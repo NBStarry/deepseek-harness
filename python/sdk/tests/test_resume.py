@@ -33,6 +33,12 @@ for line in sys.stdin:
         if outcome == "missing":
             response["error"] = {"code": -32603, "message": "session not found"}
         else:
+            print(json.dumps({"jsonrpc": "2.0", "method": "session.event", "params": {
+                "sessionId": frame["params"]["sessionId"], "event": {
+                    "type": "model/selection", "seq": 8, "time": 0,
+                    "data": {"provider": "openai-codex", "model": "gpt-5.4", "serviceTier": "priority"}
+                }
+            }}), flush=True)
             response["result"] = {}
     else:
         response["result"] = {}
@@ -47,9 +53,21 @@ for line in sys.stdin:
         env={"OUTCOME": outcome, "REQUESTS": str(requests)},
     ) as harness:
         if outcome == "restored":
-            session = harness.resume_session("saved")
+            with harness.client.subscribe_session_notifications("saved") as subscription:
+                session = harness.resume_session("saved")
+                notifications = []
+                subscription.drain(notifications.append)
             assert session.id == "saved"
             assert session.harness is harness
+            assert len(notifications) == 1
+            assert notifications[0].method == "session.event"
+            assert notifications[0].payload == {
+                "sessionId": "saved",
+                "event": {
+                    "type": "model/selection", "seq": 8, "time": 0,
+                    "data": {"provider": "openai-codex", "model": "gpt-5.4", "serviceTier": "priority"},
+                },
+            }
         else:
             with pytest.raises(JsonRpcError, match="session not found"):
                 harness.resume_session("saved")

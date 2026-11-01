@@ -81,6 +81,51 @@ beforeEach(() => {
 
 afterEach(cleanup)
 
+describe('Codex Fast selection', () => {
+  it('toggles only the session tier and preserves it across model and effort changes', async () => {
+    const directory = createSnapshotStore(state({
+      current: { provider: 'openai-codex', model: 'first', reasoningEffort: 'high' },
+      groups: [{ id: 'openai-codex', name: 'Codex', models: [
+        { id: 'first', name: 'First', reasoning }, { id: 'second', name: 'Second', reasoning },
+      ] }, { id: 'other', name: 'Other', models: [{ id: 'other', name: 'Other' }] }],
+    }))
+    const select = vi.fn(async (selection: ModelSelection) => {
+      directory.update((s) => { s.current = selection })
+      return { ok: true as const, value: undefined }
+    })
+    render(<ModelSelect locked={false} available directory={directory} load={vi.fn()}
+      resolveText={resolveText} select={select} t={t} renderSlot={renderLabel} />)
+    const open = () => fireEvent.click(screen.getByRole('button', { name: /^选择模型/ }))
+    open()
+    expect(screen.getByRole('menuitemcheckbox', { name: '快速' }).getAttribute('aria-checked')).toBe('false')
+    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: '快速' }))
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
+    expect(select).toHaveBeenLastCalledWith({ provider: 'openai-codex', model: 'first', reasoningEffort: 'high', serviceTier: 'priority' })
+    open()
+    fireEvent.click(screen.getByRole('menuitem', { name: /^推理等级/ }))
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'Max' }))
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
+    expect(select).toHaveBeenLastCalledWith({ provider: 'openai-codex', model: 'first', reasoningEffort: 'max', serviceTier: 'priority' })
+    open()
+    fireEvent.click(screen.getByRole('menuitem', { name: /^模型/ }))
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'Second' }))
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
+    expect(select).toHaveBeenLastCalledWith({ provider: 'openai-codex', model: 'second', serviceTier: 'priority' })
+    open()
+    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: '快速' }))
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
+    expect(select).toHaveBeenLastCalledWith({ provider: 'openai-codex', model: 'second' })
+    act(() => directory.update((s) => { s.current = { provider: 'openai-codex', model: 'second', serviceTier: 'priority' } }))
+    open()
+    fireEvent.click(screen.getByRole('menuitem', { name: /^模型/ }))
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'Other' }))
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
+    expect(select).toHaveBeenLastCalledWith({ provider: 'other', model: 'other' })
+    open()
+    expect(screen.queryByRole('menuitemcheckbox')).toBeNull()
+  })
+})
+
 describe('ModelSelect label slot', () => {
   it('distinguishes identical model names and ids by provider across all placements and restores labels on unload', async () => {
     const runtime = await SlotTestRuntime.create()

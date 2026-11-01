@@ -106,6 +106,8 @@ Exact-model metadata lists `reasoning.efforts` from least to greatest selectable
 
 For self-hosted Chat Completions endpoints, `thinkingTokenBudgetField` selects the reasoning-budget parameter, and `vllmPriority` sets an integer scheduler priority when the server enables priority scheduling. Template arguments accept `$var: thinking.budget`. `openai-responses` gateways can set `supportsMaxOutputTokens: false` to omit `max_output_tokens`; Azure and Codex transports ignore this shared compatibility field. These controls are opt-in; catalog-owned Anthropic effort and fallback capabilities are not configurable switches.
 
+`GenerateOptions.serviceTier: 'priority'` sends `service_tier: 'priority'` only for the `openai-codex` route using `openai-codex-responses`. Omission sends no tier; other routes and protocols remain unchanged. Priority requests use pi-ai's full stream entry with its public base-option resolver, retaining collection-owned authentication, reasoning, transport, and pricing. No deployment setting enables Fast globally.
+
 ### Change configuration at runtime
 
 Each operation captures the current `providers` Config reference. New or changed provider profiles are validated before form persistence; unchanged catalog failures remain editable. Route-set or retry-policy changes update registration atomically, preserving previous routes if another adapter owns a requested route.

@@ -474,6 +474,24 @@ describe('Web session model selection', () => {
     await ctx.fiber.dispose()
   })
 
+  it('records session-only Fast changes without saving global defaults', async () => {
+    const { ctx, agent, sessionId } = await harness()
+    onTestFinished(() => ctx.fiber.dispose())
+    ctx.llm.registerAdapter(['openai-codex'], new CatalogAdapter('Codex', [
+      { provider: 'openai-codex', id: 'codex', name: 'Codex' },
+    ], REASONING))
+    const remote = await createSessionTestRemote(ctx, { defaultModelSelection: () => ({ provider: 'openai-codex', model: 'codex', reasoningEffort: ReasoningEffortId('high') }), cwd: '/tmp' })
+    const save = vi.spyOn(ctx.agentDefaultModel, 'saveSelection')
+    const selection = { provider: 'openai-codex', model: 'codex', reasoningEffort: 'high' }
+    expectValue(await remote.selectModel({ sessionId, ...selection, serviceTier: 'priority' }))
+    expect(agent.model.current()).toEqual({ ...selection, serviceTier: 'priority' })
+    expect(agent.session.snapshotEvents().at(-1)).toMatchObject({ type: 'model/selection', data: { ...selection, serviceTier: 'priority' } })
+    expect(save).not.toHaveBeenCalled()
+    expectValue(await remote.selectModel({ sessionId, ...selection }))
+    expect(agent.model.current()).toEqual(selection)
+    expect(save).not.toHaveBeenCalled()
+  })
+
   it('rejects unlisted models and records validated selections for the next step', async () => {
     const { ctx, agent, sessionId } = await harness()
     const remote = await createSessionTestRemote(ctx, { defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }), cwd: '/tmp' })

@@ -30,7 +30,7 @@ async function runtime(root: string, persistence = true, reasoning?: LlmModelRea
   if (persistence) await ctx.plugin(JsonlSessionPersistence, { root })
   await ctx.plugin(AgentLoop, { agents: [] })
   const adapter = new MockAdapter([textResponse('remembered')], reasoning)
-  ctx.llm.registerAdapter(['mock'], adapter)
+  ctx.llm.registerAdapter(['mock', 'openai-codex', 'other-codex'], adapter)
   const events: SessionEventNotification[] = []
   const transport: JsonRpcTransportPeer = {
     request: async () => { throw new Error('unexpected server request') },
@@ -77,6 +77,44 @@ describe('SDK persisted session resume', () => {
       provider: 'mock', model,
       ...expected === undefined ? {} : { reasoningEffort: expected },
     })
+  })
+
+  it.each([
+    { provider: 'openai-codex', model: 'gpt-5.4', effort: undefined, tier: 'priority' },
+    { provider: 'openai-codex', model: 'gpt-5.4', effort: 'low', tier: 'priority' },
+    { provider: 'openai-codex', model: 'other', effort: undefined, tier: undefined },
+    { provider: 'other-codex', model: 'gpt-5.4', effort: undefined, tier: undefined },
+  ])('preserves saved Fast only on the same route: $provider / $model / $effort', async ({ provider, model, effort, tier }) => {
+    const root = await storageRoot()
+    const first = await runtime(root)
+    await first.server.initialize({ cwd: root, provider: 'openai-codex', model: 'gpt-5.4' })
+    await first.server.prompt({ sessionId: 'saved-fast', contentBlocks: [{ type: 'text', text: 'remember' }] })
+    await first.server.wait({ sessionId: 'saved-fast' })
+    first.ctx.agents.get(SessionId('saved-fast'))!.model.select({
+      provider: 'openai-codex', model: 'gpt-5.4', serviceTier: 'priority',
+    })
+    await first.server.shutdown()
+    await first.ctx.fiber.dispose()
+
+    const second = await runtime(root, true, {
+      efforts: [{ id: ReasoningEffortId('low'), name: 'Low' }],
+    })
+    await second.server.initialize({
+      cwd: root, provider, model,
+      ...effort === undefined ? {} : { reasoningEffort: ReasoningEffortId(effort) },
+    })
+    await second.server.resume({ sessionId: 'saved-fast' })
+    const agent = second.ctx.agents.get(SessionId('saved-fast'))!
+    const expected = {
+      provider, model,
+      ...tier === undefined ? {} : { serviceTier: tier },
+      ...effort === undefined ? {} : { reasoningEffort: effort },
+    }
+    expect(agent.model.current()).toEqual(expected)
+    expect(agent.session.snapshotEvents().filter(event => event.type === 'model/selection').at(-1)?.data).toEqual(expected)
+    await second.server.prompt({ sessionId: 'saved-fast', contentBlocks: [{ type: 'text', text: 'continue' }] })
+    await second.server.wait({ sessionId: 'saved-fast' })
+    expect(second.adapter.requests[0]?.serviceTier).toBe(tier)
   })
 
   it('restores due reminders through the SDK owner after initialization and shares client resume', async () => {

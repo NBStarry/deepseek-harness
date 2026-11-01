@@ -55,6 +55,17 @@ describe('headerEquals', () => {
     expect(headerEquals({ config: CONFIG, tools: [tool('a'), tool('b')] }, { config: CONFIG, tools: [tool('b'), tool('a')] })).toBe(false)
   })
 
+  it('compares priority independently of route and clears it in a replacement header', () => {
+    const priority = canonicalHeader({ config: { ...CONFIG, serviceTier: 'priority' } })
+    expect(headerEquals(priority, structuredClone(priority))).toBe(true)
+    expect(headerEquals(priority, { config: CONFIG })).toBe(false)
+    expect(headerEquals({ config: CONFIG }, priority)).toBe(false)
+    const session = Session.create(SessionId('tier'))
+    session.append('request/header', { header: priority, reason: 'initial' })
+    session.append('request/header', { header: { config: CONFIG }, reason: 'change' })
+    expect(session.requestHeader()?.config).not.toHaveProperty('serviceTier')
+  })
+
   it('treats absent and empty tool arrays as equivalent canonical absence', () => {
     expect(headerEquals({ config: CONFIG }, { config: CONFIG, tools: [] })).toBe(true)
     expect(headerEquals({ config: CONFIG, tools: [] }, { config: CONFIG })).toBe(true)

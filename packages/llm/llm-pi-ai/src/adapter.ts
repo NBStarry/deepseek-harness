@@ -37,6 +37,9 @@ import type {
   SimpleStreamOptions,
   ThinkingLevel,
 } from '@earendil-works/pi-ai'
+import { hasApi } from '@earendil-works/pi-ai/models'
+import { buildBaseOptions } from '@earendil-works/pi-ai/api/simple-options'
+import { normalizeContext } from '@earendil-works/pi-ai/utils/transcript'
 import {
   attributionHeaders,
   contentHasImage,
@@ -413,7 +416,7 @@ export class PiAiAdapter extends LlmAdapter {
             maxBytes: profile.requestImageMaxBytes,
           },
         }, onReplayDegrade, updates.systemPromptUpdate === 'in-history')
-      const events = snapshot.models.streamSimple(model, context, {
+      const streamOptions: SimpleStreamOptions = {
         ...profileOptions(profile, reasoning, apiKey),
         ...options.temperature === undefined ? {} : { temperature: options.temperature },
         ...options.maxTokens === undefined ? {} : { maxTokens: options.maxTokens },
@@ -422,7 +425,17 @@ export class PiAiAdapter extends LlmAdapter {
         // Profile headers are deployment-owned; attribution names are
         // Harness-owned and therefore win collisions.
         headers: requestHeaders(profile.headers),
-      })
+      }
+      // pi-ai 1.3 streamSimple drops serviceTier. Its full stream entry preserves
+      // native options and still resolves collection-owned OAuth and transport.
+      const events = options.serviceTier === 'priority' && model.provider === 'openai-codex'
+        && hasApi(model, 'openai-codex-responses')
+        ? snapshot.models.stream(model, context, {
+          ...buildBaseOptions(model, normalizeContext(context), streamOptions),
+          ...streamOptions.reasoning === undefined ? {} : { reasoningEffort: streamOptions.reasoning },
+          serviceTier: options.serviceTier,
+        })
+        : snapshot.models.streamSimple(model, context, streamOptions)
       const iterator = toStreamChunks(events, model.contextWindow, options.signal, model.id)[Symbol.asyncIterator]()
       let exhausted = false
       try {

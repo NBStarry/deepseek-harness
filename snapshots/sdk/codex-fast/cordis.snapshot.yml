@@ -1,0 +1,12 @@
+- insert:
+    - id: llm-replay
+      name: '@deepseek-ai/dsh-llm-replay'
+      config:
+        providers:
+          - id: openai-codex
+            name: Codex replay
+            models:
+              - id: gpt-5.4
+                contextWindow: 1000000
+              - id: gpt-5.4-mini
+                contextWindow: 1000000

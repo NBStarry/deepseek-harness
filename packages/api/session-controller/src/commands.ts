@@ -142,7 +142,7 @@ export class SessionCommandController {
   }
 
   /**
-   * Validate and record one Session model selection; save the default in the background.
+   * Validate and record a Session selection; tier-only changes never save defaults.
    * @param request - Session identity and requested model selection.
    * @returns the normalized selection recorded for the Session, without waiting for default persistence.
    */
@@ -157,15 +157,19 @@ export class SessionCommandController {
           ...(request.reasoningEffort === undefined
             ? {}
             : { reasoningEffort: ReasoningEffortId(request.reasoningEffort) }),
+          ...request.serviceTier === undefined ? {} : { serviceTier: request.serviceTier },
         }
         await this.ctx.llm.resolveCallConfig(selected)
+        const previous = agent.model.current()
         agent.model.select(selected)
-        void this.ctx.agentDefaultModel.saveSelection(selected).catch((error: unknown) => {
+        const tierOnly = previous !== undefined && previous.provider === selected.provider && previous.model === selected.model
+          && previous.reasoningEffort === selected.reasoningEffort && previous.serviceTier !== selected.serviceTier
+        if (!tierOnly) void this.ctx.agentDefaultModel.saveSelection(selected).catch((error: unknown) => {
           this.ctx.logger.warn(
             `session-controller: model selection changed for the Session but the default was not saved: ${String(error)}`,
           )
         })
-        return { selected: { ...selected } }
+        return { selected }
       } catch (error) {
         if (remoteErrorOf(error) !== undefined) throw error
         throw new RemoteError(

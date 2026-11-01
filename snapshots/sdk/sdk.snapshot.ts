@@ -106,6 +106,8 @@ interface SdkAssertions {
   approvalOutcomes?: readonly ('allowed-once' | 'rejected')[]
   /** Additional profile patches applied after the shared composition. */
   patches?: readonly string[]
+  /** Restart before these turns, resuming with the specified model. */
+  resumeModels?: Readonly<Record<number, string>>
   /** Wait for the recorded provider title before sending each subsequent prompt. */
   waitForProviderTitle?: boolean
   /** Final response required from a completed turn before updating goldens. */
@@ -130,6 +132,10 @@ interface SdkAssertions {
 }
 
 const SDK_ASSERTIONS: Readonly<Record<string, SdkAssertions>> = {
+  'codex-fast': {
+    resumeModels: { 3: 'gpt-5.4', 6: 'gpt-5.4-mini' },
+    expectedFinalResponse: 'FAST_6',
+  },
   'approval': {
     approvalOutcomes: ['allowed-once', 'rejected'],
     environment: { DSH_PERMISSION_MODE: 'workspace-write' },
@@ -666,12 +672,15 @@ async function runScenario(scenario: CorpusScenario): Promise<{
   })
   const [parentFixture, ...childFixtures] = replayFixtures
   const actions = turnActions(primaryFixture)
-  const resumeReplayFile = scenario.name === 'session-resume' && !recording
+  const resumeReplayFile = (scenario.name === 'session-resume' || assertions.resumeModels !== undefined) && !recording
     ? join(patchRoot, 'resume-replay.json') : undefined
   const prepareTurnReplay = async (turn: number): Promise<void> => {
     if (resumeReplayFile === undefined || parentFixture === undefined) return
+    const nextRestart = Object.keys(assertions.resumeModels ?? {}).map(Number)
+      .filter(candidate => candidate > turn).sort((left, right) => left - right)[0] ?? Infinity
     const events = parseSessionLog(await readFile(parentFixture, 'utf8'))
-      .filter(event => 'turn' in event.data && event.data.turn === turn)
+      .filter(event => 'turn' in event.data && typeof event.data.turn === 'number'
+        && (assertions.resumeModels === undefined ? event.data.turn === turn : event.data.turn >= turn && event.data.turn < nextRestart))
     await writeFile(resumeReplayFile, JSON.stringify(deriveReplayScript(events)))
   }
   if (actions[0] !== undefined) await prepareTurnReplay(actions[0].turn)
@@ -757,11 +766,13 @@ async function runScenario(scenario: CorpusScenario): Promise<{
           )
           continue
         }
-        if (scenario.name === 'session-resume' && results.length > 0) {
+        const resumeModel = assertions.resumeModels?.[action.turn]
+          ?? (scenario.name === 'session-resume' && results.length > 0 ? 'deepseek-v4-pro' : undefined)
+        if (resumeModel !== undefined) {
           subscription.close()
           await harness.close()
           await prepareTurnReplay(action.turn)
-          harness = createHarness('deepseek-v4-pro')
+          harness = createHarness(resumeModel)
           await harness.start()
           subscription = harness.client.subscribeSessionTree(sessionId)
           await expect(harness.resumeSession('missing-session')).rejects.toThrow()
@@ -1013,6 +1024,24 @@ describe('TypeScript SDK snapshots over the jsonrpc runtime', () => {
       )
       reconcileCatalogCreationTimes(ordered.map(log => log.content), 'validate')
       const actualContext = contextOf(ordered, cwd)
+      if (scenario.name === 'codex-fast') {
+        const events = results.flatMap(result => result.events)
+        const headers = events.filter(event => event.type === 'request/header')
+        const route = { provider: 'openai-codex', model: 'gpt-5.4' }
+        const priority = { ...route, serviceTier: 'priority' }
+        expect(headers.map(event => event.data.header.config)).toEqual([
+          route, priority, priority, route, priority, { ...route, model: 'gpt-5.4-mini' },
+        ])
+        expect(headers.map(event => event.data.reason)).toEqual(['initial', 'change', 'resume', 'change', 'change', 'resume'])
+        expect(records(ordered[0]!.content).filter(event => event.type === 'model/selection').map(event => event.data))
+          .toEqual([priority, route, priority, { ...route, model: 'gpt-5.4-mini' }])
+        const selectedTypes = new Set(['model/selection', 'request/header'])
+        const subscribed = notifications.flatMap(notification => {
+          const event = notificationEvent(notification)
+          return event !== undefined && typeof event.type === 'string' && selectedTypes.has(event.type) ? [event] : []
+        })
+        expect(subscribed).toEqual(events.filter(event => selectedTypes.has(event.type)))
+      }
       if (scenario.name === 'ptc-cancel') {
         const events = results.flatMap(result => result.events)
         expect(events.find(event => event.type === 'tool/result')).toMatchObject({ data: {

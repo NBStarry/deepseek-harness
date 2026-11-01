@@ -495,7 +495,11 @@ export class HarnessSdkJsonRpcServer {
       // The initialized route replaces the restored Session's model selection.
       setup: (_agentCtx, agent) => {
         const previous = agent.model.current()
-        const selection = { ...agentOptions }
+        const selection = {
+          ...agentOptions,
+          ...previous?.provider === agentOptions.provider && previous.model === agentOptions.model
+            && previous.serviceTier !== undefined ? { serviceTier: previous.serviceTier } : {},
+        }
         if (selection.reasoningEffort === undefined && previous !== undefined
           && previous.provider === selection.provider && previous.model === selection.model
           && previous.reasoningEffort !== undefined) {

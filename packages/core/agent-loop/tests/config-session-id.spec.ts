@@ -488,9 +488,10 @@ describe('config-driven session id', () => {
   })
 
   it.each([
-    { label: 'preserves the recorded effort on the same configured route', route: { provider: 'mock', model: 'mock' }, expected: { provider: 'mock', model: 'mock', reasoningEffort: 'high' }, appended: 0 },
-    { label: 'applies an explicit configured effort', route: { provider: 'mock', model: 'mock', reasoningEffort: ReasoningEffortId('low') }, expected: { provider: 'mock', model: 'mock', reasoningEffort: 'low' }, appended: 1 },
-    { label: 'keeps the recorded choice without a configured route', route: {}, expected: { provider: 'mock', model: 'mock', reasoningEffort: 'high' }, appended: 0 },
+    { label: 'preserves recorded effort and priority on the same configured route', route: { provider: 'mock', model: 'mock' }, expected: { provider: 'mock', model: 'mock', reasoningEffort: 'high', serviceTier: 'priority' }, appended: 0 },
+    { label: 'applies an explicit configured effort while retaining priority', route: { provider: 'mock', model: 'mock', reasoningEffort: ReasoningEffortId('low') }, expected: { provider: 'mock', model: 'mock', reasoningEffort: 'low', serviceTier: 'priority' }, appended: 1 },
+    { label: 'keeps the recorded choice without a configured route', route: {}, expected: { provider: 'mock', model: 'mock', reasoningEffort: 'high', serviceTier: 'priority' }, appended: 0 },
+    { label: 'clears effort and priority on a different configured route', route: { provider: 'mock', model: 'other' }, expected: { provider: 'mock', model: 'other' }, appended: 1 },
   ])('config-driven resume $label', async ({ route, expected, appended }) => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-cfg-resume-route-'))
     dirs.push(root)
@@ -501,7 +502,7 @@ describe('config-driven session id', () => {
     const h1 = await ctx1.agents.create({ sessionId: SessionId('sticky-route'), agentOptions: { provider: 'mock', model: 'mock' } })
     h1.agent.followup(createUserMessage({ content: [{ type: 'text', text: 'remember me' }], source: { kind: 'user' } }))
     await waitForIdle(ctx1, h1.agent)
-    h1.agent.model.select({ provider: 'mock', model: 'mock', reasoningEffort: ReasoningEffortId('high') })
+    h1.agent.model.select({ provider: 'mock', model: 'mock', reasoningEffort: ReasoningEffortId('high'), serviceTier: 'priority' })
     await h1.dispose()
     await ctx1.fiber.dispose()
 

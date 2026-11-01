@@ -1,0 +1,99 @@
+{
+  "finalResponses": [
+    "FAST_1",
+    "FAST_2",
+    "FAST_3",
+    "FAST_4",
+    "FAST_5",
+    "FAST_6"
+  ],
+  "headers": [
+    {
+      "config": {
+        "provider": "openai-codex",
+        "model": "gpt-5.4"
+      },
+      "reason": "initial"
+    },
+    {
+      "config": {
+        "provider": "openai-codex",
+        "model": "gpt-5.4",
+        "serviceTier": "priority"
+      },
+      "reason": "change"
+    },
+    {
+      "config": {
+        "provider": "openai-codex",
+        "model": "gpt-5.4",
+        "serviceTier": "priority"
+      },
+      "reason": "resume"
+    },
+    {
+      "config": {
+        "provider": "openai-codex",
+        "model": "gpt-5.4"
+      },
+      "reason": "change"
+    },
+    {
+      "config": {
+        "provider": "openai-codex",
+        "model": "gpt-5.4",
+        "serviceTier": "priority"
+      },
+      "reason": "change"
+    },
+    {
+      "config": {
+        "provider": "openai-codex",
+        "model": "gpt-5.4-mini"
+      },
+      "reason": "resume"
+    }
+  ],
+  "selections": [
+    {
+      "provider": "openai-codex",
+      "model": "gpt-5.4",
+      "serviceTier": "priority"
+    },
+    {
+      "provider": "openai-codex",
+      "model": "gpt-5.4"
+    },
+    {
+      "provider": "openai-codex",
+      "model": "gpt-5.4",
+      "serviceTier": "priority"
+    }
+  ],
+  "resumedSelections": [
+    {
+      "provider": "openai-codex",
+      "model": "gpt-5.4-mini"
+    }
+  ],
+  "durableSelections": [
+    {
+      "provider": "openai-codex",
+      "model": "gpt-5.4",
+      "serviceTier": "priority"
+    },
+    {
+      "provider": "openai-codex",
+      "model": "gpt-5.4"
+    },
+    {
+      "provider": "openai-codex",
+      "model": "gpt-5.4",
+      "serviceTier": "priority"
+    },
+    {
+      "provider": "openai-codex",
+      "model": "gpt-5.4-mini"
+    }
+  ]
+}

@@ -115,6 +115,25 @@ describe('Session model selection', () => {
     expect(h.state()).toBe(state)
   })
 
+  it('projects priority choices and clears them when omitted, including after replay', async () => {
+    const h = await harness()
+    const priority: ModelSelection = { ...INITIAL, serviceTier: 'priority' }
+    expect(h.current()).not.toHaveProperty('serviceTier')
+    h.record(priority)
+    h.header(INITIAL)
+    expect(h.state().pending).toEqual(priority)
+    h.header(priority)
+    expect(h.state()).toEqual({ lastUsed: priority, pending: null })
+    h.record(INITIAL)
+    expect(h.ctx.sessionProjections.snapshot(h.session).values.modelSelection)
+      .toEqual({ lastUsed: priority, next: INITIAL })
+    const restored = Session.create(SessionId('priority-restored'), h.session.snapshotEvents())
+    const projection = await h.ctx.sessionProjections.register(modelSelectionProjectionDefinition)
+    expect(new AgentModel(() => projection.stateOf(restored), restored, {}).current()).toEqual(INITIAL)
+    h.header(INITIAL)
+    expect(h.state()).toEqual({ lastUsed: INITIAL, pending: null })
+  })
+
   it('leaves adapter-defaulted reasoning unselected while retaining explicit effort', async () => {
     const h = await harness()
     const selected = { provider: 'beta', model: 'b1' }
