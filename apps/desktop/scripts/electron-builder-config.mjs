@@ -78,7 +78,7 @@ export function createElectronBuilderConfig(
   let windowsCode = []
   const unpack = ['**/*.{node,dylib,dll,so,exe}', '**/*.so.*', '**/spawn-helper', '**/@vscode/ripgrep-*/bin/rg',
     `**/node_modules/@deepseek-ai/libreoffice-kit-${resolvedPlatform}-${resolvedArch}/**/*`,
-    ...(packagesMacOS ? [`**/${desktopCuaHelperPath(resolvedArch)}`] : [])]
+    ...(packagesMacOS ? ['arm64', 'x64'].map(arch => `**/${desktopCuaHelperPath(arch)}/**/*`) : [])]
   const windowsSigner = packagesWindows && !unsigned
     ? createWindowsTokenSigner({
         certificateFile: env.DSH_DESKTOP_WINDOWS_CER_FILE,
