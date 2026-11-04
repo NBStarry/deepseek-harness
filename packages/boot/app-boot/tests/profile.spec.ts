@@ -9,7 +9,7 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { createRequire } from 'node:module'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { afterAll, describe, expect, it, onTestFinished, vi } from 'vitest'
 import {
@@ -132,6 +132,50 @@ async function importFromResolution(
     registration.dispose()
   }
 }
+
+it('resolves opt-in CUA packages from an isolated profile', async () => {
+  const anchor = stageInstallation({ '@deepseek-ai/cordis': {} })
+  const home = tmp()
+  const dir = resolveProfileDir('desktop', home)
+  const bundleName = '@deepseek-ai/dsh-cua-bundle'
+  const packageNames = ['@deepseek-ai/dsh-computer-use', '@deepseek-ai/dsh-cua', '@deepseek-ai/dsh-experimental-cua-macos']
+  const bundleSource = resolve(import.meta.dirname, '../../../experimental/cua-bundle')
+  const bundleManifestText = readFileSync(join(bundleSource, 'package.json'), 'utf8')
+  const bundleManifest = JSON.parse(bundleManifestText) as {
+    name: string
+    dependencies: Record<string, string>
+    optionalDependencies: Record<string, string>
+  }
+  expect(bundleManifest.name).toBe(bundleName)
+  expect([...Object.keys(bundleManifest.dependencies), ...Object.keys(bundleManifest.optionalDependencies)].sort())
+    .toEqual([...packageNames].sort())
+  initProfile(dir, [bundleName])
+  const bundleDir = join(dir, 'node_modules', bundleName)
+  mkdirSync(bundleDir, { recursive: true })
+  writeFileSync(join(bundleDir, 'package.json'), bundleManifestText)
+  for (const name of packageNames) {
+    const packageDir = join(dir, 'node_modules', name)
+    mkdirSync(packageDir, { recursive: true })
+    writeFileSync(join(packageDir, 'package.json'), JSON.stringify({ name, version: '1.0.0', peerDependencies: { '@deepseek-ai/cordis': '*' } }))
+  }
+  const manifest = readProfileManifest('test', dir)
+  writeProfileManifest(dir, { ...manifest, dependencies: { [bundleName]: '1.0.0' } })
+  // Construct the layer directly: pnpm can add the checkout bundle to the installation's NODE_PATH.
+  const selected = stageProfile(home, 'desktop', join(bundleDir, 'package.json'))
+  expect(realpathSync(selected.layers[0]!.packageDir)).toBe(realpathSync(bundleDir))
+  const before = await createRuntimeResolution({ installAnchor: anchor, home })
+  expect(before.entries.filter(entry => packageNames.includes(entry.name))).toEqual([])
+  const resolution = await createRuntimeResolution({ installAnchor: anchor, profile: selected, home })
+  expect(resolution.localPackageNames).toContain(bundleName)
+  for (const name of packageNames) {
+    const entry = resolution.entries.find(candidate => candidate.name === name)
+    expect(entry?.scope).toBe('profile')
+    expect(realpathSync(entry!.packageDir)).toBe(realpathSync(join(dir, 'node_modules', name)))
+  }
+  const cordis = resolution.entries.find(entry => entry.name === '@deepseek-ai/cordis')
+  expect(cordis?.scope).toBe('installation')
+  expect(realpathSync(cordis!.packageDir)).toBe(realpathSync(join(anchor, '..', 'node_modules', '@deepseek-ai/cordis')))
+})
 
 describe('isolated profile resolution', () => {
   it('resolves peers from each installation without sharing profile state', async () => {

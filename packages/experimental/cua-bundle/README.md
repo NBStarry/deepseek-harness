@@ -24,7 +24,7 @@ Enable macOS Computer Use from Plugins for existing and new PTC sessions. Window
 <a id="use-this-package"></a>
 ## Use this package
 
-In macOS Desktop, open **Plugins → Add plugin**, enter `@deepseek-ai/dsh-cua-bundle`, choose **Install**, then **Enable now**. DSH installs the official version matching its runtime into the profile. Published packages contain the signed and notarized helper; users need no compiler. Source Web and development Desktop link the workspace bundle and prepare an ad-hoc helper when enabled. Open Computer Use details, choose PTC if needed, and grant Accessibility and Screen Recording to `DSH Computer Use.app`. Disabled installed bundles remain available for management. For source Web, run these commands from the repository root:
+In macOS Desktop, open **Plugins → Add plugin**, enter `@deepseek-ai/dsh-cua-bundle`, choose **Install**, then **Enable now**. DSH targets the official version matching its runtime for installation into the profile. Release packaging requires a signed and notarized helper, but the published `0.2.2-alpha.2` macOS provider lacks its native helper; reinstalling that version alone does not restore Computer Use. Use a compatible release with the prepared helper when available. Source Web and development Desktop link the workspace bundle and prepare an ad-hoc helper when enabled. Open Computer Use details, choose PTC if needed, and grant Accessibility and Screen Recording to `DSH Computer Use.app`. Disabled installed bundles remain available for management. For source Web, run these commands from the repository root:
 
 ```sh
 pnpm run build
@@ -39,7 +39,7 @@ Disabling unloads the provider and withdraws CUA tools from its Agent scopes. Ru
 
 Computer Use is available only on a macOS DSH Host. The native provider is an optional dependency installed only on macOS; the bundle and its shared libraries install on demand. Other Hosts hide the bundle from default plugin lists and model recommendations and refuse enablement before saving settings. Explicit profile dependencies and saved selections remain visible for management. An already selected bundle is skipped at startup with a diagnostic and remains available for deselection; saved user settings remain. A browser on another operating system can connect to a supported Mac Host.
 
-If preparation fails, the saved selection remains and CUA operations stay unavailable. Refresh or reopen the plugin page to read the component diagnostic, correct its cause, then restart DSH.
+If preparation fails, the saved selection remains and CUA operations stay unavailable. Refresh or reopen the plugin page to read the component diagnostic, correct its cause, then restart DSH. A selected bundle is not necessarily installed: a profile that relied on a previously shipped copy can retain its selection after that copy is removed. If DSH cannot resolve it, startup skips it and reports a diagnostic; install an available compatible package or deselect it.
 
 Explicit activation runs a read-only permission check, which may start a helper without opening a system dialog. Open the [permission page](../cua/README.md) for system requests, settings navigation and automatic refresh. Tasks ask separately before accessing an application. Saved application decisions use profile-scoped domain storage. Conversation decisions survive turns, connections, DSH restarts and Computer Use disablement without applying to another conversation. Revoke access on the same page.
 
