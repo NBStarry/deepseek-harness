@@ -1,0 +1,19 @@
+# Bilingual-pair consistency record for 2026-11-02-sidebar-browser-persistent-storage.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-11-02-sidebar-browser-persistent-storage.md
+/agent-note-persistent-sidebar-browser-storage:
+  en: 6d00ca242fa7537c
+  zh: c7f724b67e729133
+/agent-note-persistent-sidebar-browser-storage/problem:
+  en: 577843b72ad0b36b
+  zh: bdc333431de3ae8d
+/agent-note-persistent-sidebar-browser-storage/decision:
+  en: 1d26e52c4668a864
+  zh: 4832a7a722800607
+/agent-note-persistent-sidebar-browser-storage/alternatives-considered:
+  en: 36802374a1b744c1
+  zh: b34264f8b30e3aec
+/agent-note-persistent-sidebar-browser-storage/consequences:
+  en: 3a7f54ff1d16a023
+  zh: 444f04f535d8f44d

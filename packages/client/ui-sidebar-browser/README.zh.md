@@ -82,7 +82,7 @@ Desktop 主进程批准 guest 租约，并执行挂载、导航和权限策略�
 - [右侧 Sidebar](../../../docs/subsystems/sidebar-right.zh.md)——tab composition、导航与生命周期。
 - [Document Preview](../ui-sidebar-documentpreview/README.zh.md)——本地源码、Markdown、图片、HTML 与 PDF 渲染。
 - [Sidebar Browser 决策](../../../.agents/notes/implemented/feature/2026-09-16-sidebar-browser.zh.md)——iframe 行为与 controller 所有权。
-- [Desktop Browser 决策](../../../.agents/notes/implemented/feature/2026-09-20-desktop-browser-webview.zh.md)——webview 租约、CWD 存储分组与手动恢复。
+- [Desktop Browser 决策](../../../.agents/notes/implemented/feature/2026-09-20-desktop-browser-webview.zh.md)——webview 租约与手动恢复；原存储策略已由[持久存储决策](../../../.agents/notes/implemented/feature/2026-11-02-sidebar-browser-persistent-storage.zh.md)取代。
 
 -----
 
@@ -107,7 +107,7 @@ Desktop 主进程批准 guest 租约，并执行挂载、导航和权限策略�
 - 出于安全原因，浏览器会隐藏很多 iframe 失败：DNS、TLS、mixed-content、CSP 与 `X-Frame-Options` 失败可能触发 `load`，也可能不提供可操作 event，而不是触发 `error`。加载失败 notice 只能作为 best-effort 提示。
 - 只要 tab 仍在 Sidebar 布局中，保存的标题和 URL 就会跨刷新与插件卸载保留。关闭 tab 会删除其检查点。重启恢复不恢复页面内存、未保存的表单或 Chromium history 栈。
 - 本地文件会被拒绝，并继续由 Document Preview 负责。
-- Desktop 按规范化的工作区 CWD 共享进程内存储分区；没有解析到 Workspace 的 Session 单独隔离。Cookie 与 Web storage 不跨应用重启保留。guest 权限、下载与原生 popup 均被拒绝；通过检查的 HTTP(S) popup 请求会打开 Sidebar tab。Host 地址过滤不是通用私网或 DNS-rebinding 防火墙。
+- Desktop 当前 profile 的所有工作区和 Session 共享一个持久站点数据分区。同一 Electron 用户数据目录中，不同的规范化 profile 路径使用不同分区；更换用户数据目录也会使用独立存储。将 profile 移到不同路径可能使原站点数据不可见。持久 Cookie 与 Web storage 可以跨应用重启保留，但会话 Cookie 和站点过期策略可能要求重新登录。关闭 tab、删除 Session 或退出 DSH 账号不会清除站点数据。当前没有专门的站点数据清除入口，也没有自动清理机制。退出网站账号可能撤销登录，但未必删除全部本地数据；不要将删除整个应用用户数据目录视为浏览器专用重置。guest 权限、下载与原生 popup 均被拒绝；通过检查的 HTTP(S) popup 请求会打开 Sidebar tab。Host 地址过滤不是通用私网或 DNS-rebinding 防火墙。
 
 <a id="dev-note"></a>
 ### 开发备注

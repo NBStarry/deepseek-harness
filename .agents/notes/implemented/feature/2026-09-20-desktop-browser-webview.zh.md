@@ -12,9 +12,9 @@ iframe 无法提供跨域导航状态, 也无法显示拒绝嵌入的站点. 如
 
 ## Decision
 
-Desktop 通过 `ElectronWebViewImpl` 使用 `<webview>`; Web 保留显式启用的 iframe 载体. [Sidebar Browser 决策](2026-09-16-sidebar-browser.zh.md)负责共享 Tab 行为与 iframe 限制; 本文负责 Desktop 载体和按 Workspace 共享的分区.
+Desktop 通过 `ElectronWebViewImpl` 使用 `<webview>`; Web 保留显式启用的 iframe 载体. [Sidebar Browser 决策](2026-09-16-sidebar-browser.zh.md)负责共享 Tab 行为与 iframe 限制; 本文负责 Desktop 载体；后续[持久存储决策](2026-11-02-sidebar-browser-persistent-storage.zh.md)取代原按工作区分区策略。
 
-[Sidebar 稳定挂载决策](../architecture/2026-09-20-sidebar-retained-tab-layout.zh.md)负责真实 CSS 布局中的保活会话与 Tab 容器。Workspace 存储所有权与 guest 基础安全配置仍由本文负责。
+[Sidebar 稳定挂载决策](../architecture/2026-09-20-sidebar-retained-tab-layout.zh.md)负责真实 CSS 布局中的保活会话与 Tab 容器。guest 基础安全配置仍由本文负责；后续存储决策定义 profile 级所有权。
 
 - `BrowserController` 负责地址命令与可恢复的展示状态。原生 history 留在 guest 内；真实 URL 与标题观察更新持久化地址。
 - 控制器注册表按 DSH Session 索引，不依赖呈现绑定的存活期。重新绑定只替换存储写入方，不重建页面。
@@ -28,9 +28,9 @@ Browser 分别拥有 Host 与 Client 编译程序。Desktop 和 Host 聚合配�
 
 ### Storage ownership
 
-`DesktopBrowserGuests` 为每个规范化 CWD 存储账号分配随机、非持久化的 Electron partition。Client 使用 Host 规范化后的 `WorkspaceView.path`，不使用 Workspace 记录 UUID，因此在同一目录重建 Workspace 不改变存储账号 key。DSH Session 解析到同一 CWD 的 Browser Tab 共享账号；没有可解析 Workspace 的 Session 仍单独隔离。Workspace 归属在 Client 收到权威基线后解析，并在一次 guest occurrence 内保持不变。CWD key 控制共享关系，不决定是否落盘。
+`DesktopBrowserGuests` 按[持久存储决策](2026-11-02-sidebar-browser-persistent-storage.zh.md)为当前 Desktop profile 分配持久化 Electron partition。所有工作区与 Session 共享站点数据，guest 租约仍彼此独立。
 
-关闭 tab 只释放它的 guest，不清空账号的 Cookie 或存储。Cookie、localStorage、IndexedDB、Service Worker 与缓存由 partition 持有，并继续遵循普通 origin 规则。DOM、原生 history 与 sessionStorage 仍由页面持有。账号 partition 在同一 Electron 进程内重建窗口后仍保留，但不跨应用退出持久化。
+关闭 tab 只释放它的 guest，不清空账号的 Cookie 或存储。Cookie、localStorage、IndexedDB、Service Worker 与缓存由 partition 持有，并继续遵循普通 origin 规则。DOM、原生 history 与 sessionStorage 仍由页面持有。账号 partition 跨应用退出持久化；会话 Cookie 与站点策略仍可能要求重新登录。
 
 ### Initial guest policy
 
@@ -46,13 +46,13 @@ Desktop toolbar 没有关闭 sandbox 的开关。实现不增加远程调试端�
 
 **在可见与隐藏 DOM 容器之间搬移 guest。** Electron 44 的 `WebViewElement.disconnectedCallback` 会 detach guest 并重置内部实例。保留元素引用或 React key 不能保留该实例，因此父节点保持固定。
 
-**每个 tab 使用独立 partition。** 这会隔离相关页面的站点账号。Workspace 所有权提供所需的共享，同时不共享应用 Session；每个 tab 仍拥有独立 guest。
+**每个 tab 使用独立 partition。** 这会隔离相关页面的站点账号。profile 所有权提供所需的共享，同时不共享应用 Session；每个 tab 仍拥有独立 guest。
 
 **修改活动 webview 的 partition。** Electron 在首次导航前确定 partition。选择其他隔离粒度需要替换 guest，并明确已有站点数据的处置策略，而不是实时切换属性。
 
 ## Consequences
 
-Sidebar 持有的稳定祖先保留页面，无需 Browser 自行处理几何或遮挡。隐藏 guest 保留页面内存，也可能继续联网；当前没有空闲回收策略。持久化存储、可选择的隔离级别与权限授权 UI 留作独立工作。临时 Workspace partition 是当前策略，并不意味着 Workspace 隔离必然要求临时存储。
+Sidebar 持有的稳定祖先保留页面，无需 Browser 自行处理几何或遮挡。隐藏 guest 保留页面内存，也可能继续联网；当前没有空闲回收策略。可选择的隔离级别、站点数据清除入口与权限授权 UI 留作独立工作。
 
 定向测试覆盖原生导航错误恢复、preload 监听范围和已迁移的 iframe 行为。这些测试不能确认真实 Electron 的挂载时序、遮挡、焦点、平台样式或存储隔离；这些仍是运行时验证缺口。本次变更不附带 GUI 录像。此实现不构成完整浏览器安全策略已经可以发布的证据。
 

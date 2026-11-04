@@ -1,5 +1,5 @@
 /** Main-process ownership and fixed isolation policy for Sidebar webview guests. */
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { app, session, type BrowserWindow, type Session, type WebContents } from 'electron'
 import type { DesktopBrowserLeaseId, DesktopBrowserOpenRequest, DesktopBrowserReservation } from '@deepseek-ai/dsh-client-ui-sidebar-browser/types'
 import { DESKTOP_IPC } from './ipc.ts'
@@ -12,37 +12,42 @@ interface GuestLease {
   releaseInput?: () => void
 }
 
-/** Owns workspace storage partitions independently from individual tab guests. */
+/** Owns one profile storage partition independently from individual tab guests. */
 export class DesktopBrowserGuests {
-  private readonly partitions = new Map<string, string>()
+  private partition: string | undefined
   private readonly leases = new Map<DesktopBrowserLeaseId, GuestLease>()
 
-  /** @param hostUrl - current authenticated DSH Host, which guests cannot request. */
-  constructor(private readonly hostUrl: () => string | undefined) {}
+  /**
+   * @param hostUrl - current authenticated DSH Host, which guests cannot request.
+   * @param profile - returns the prepared desktop profile's real path in the main process.
+   */
+  constructor(private readonly hostUrl: () => string | undefined, private readonly profile: () => string) {}
 
   /**
-   * Reserve one guest in a workspace's process-lifetime partition.
+   * Reserve one guest in the current profile's persistent partition.
    * @param owner - authenticated primary application WebContents.
-   * @param workspace - workspace identity received over IPC.
+   * @param workspace - legacy renderer-supplied identity, validated but not used for storage selection.
    * @returns opaque lease and the partition approved for it.
    */
   acquire(owner: WebContents, workspace: unknown): DesktopBrowserReservation {
     if (typeof workspace !== 'string' || workspace.length === 0 || workspace.length > 4096) {
       throw new Error('desktop browser: a workspace storage identity is required')
     }
-    let partition = this.partitions.get(workspace)
-    if (partition === undefined) {
-      partition = `dsh-sidebar-browser-${randomUUID()}`
+    const profile = this.profile()
+    if (owner.isDestroyed()) throw new Error('desktop browser: owner is destroyed')
+    if (this.partition === undefined) {
+      const identity = createHash('sha256').update(profile).digest('hex')
+      const partition = `persist:dsh-sidebar-browser-profile-v1-${identity}`
       this.configureSession(session.fromPartition(partition))
-      this.partitions.set(workspace, partition)
+      this.partition = partition
     }
     const lease = randomUUID() as DesktopBrowserLeaseId
-    this.leases.set(lease, { owner, partition, attached: false })
-    return { lease, partition }
+    this.leases.set(lease, { owner, partition: this.partition, attached: false })
+    return { lease, partition: this.partition }
   }
 
   /**
-   * Release only a lease issued to this application window; workspace storage survives.
+   * Release only a lease issued to this application window; profile storage survives.
    * @param owner - authenticated IPC sender.
    * @param id - lease received over IPC.
    */

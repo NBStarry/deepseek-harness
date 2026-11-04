@@ -82,7 +82,7 @@ The page refresh shortcut calls the same reload operation as the toolbar. Its to
 - [Right Sidebar](../../../docs/subsystems/sidebar-right.md) — tab composition, navigation, and lifecycle.
 - [Document Preview](../ui-sidebar-documentpreview/README.md) — local source, Markdown, images, HTML, and PDF rendering.
 - [Sidebar Browser decision](../../../.agents/notes/implemented/feature/2026-09-16-sidebar-browser.md) — iframe behavior and controller ownership.
-- [Desktop Browser decision](../../../.agents/notes/implemented/feature/2026-09-20-desktop-browser-webview.md) — webview leases, CWD storage grouping and manual restoration.
+- [Desktop Browser decision](../../../.agents/notes/implemented/feature/2026-09-20-desktop-browser-webview.md) — webview leases and manual restoration; its original storage policy is superseded by the [persistent storage decision](../../../.agents/notes/implemented/feature/2026-11-02-sidebar-browser-persistent-storage.md).
 
 -----
 
@@ -107,7 +107,7 @@ The isolation policy deliberately gives up some browser compatibility:
 - Browsers conceal many iframe failures for security: DNS, TLS, mixed-content, CSP, and `X-Frame-Options` failures may emit `load` or no actionable event instead of `error`. The load-failure notice is best-effort.
 - Saved title and URL survive reloads and plugin unload while the tab remains in Sidebar's layout. Closing the tab removes its checkpoint. Restart restoration does not recover page memory, unsaved forms or Chromium's history stack.
 - Local files are rejected and remain owned by Document Preview.
-- Desktop shares process-local storage partitions by canonical workspace CWD; Sessions without a resolved Workspace are isolated separately. Cookies and Web storage do not survive application restart. Guest permissions, downloads and native popups are denied; approved HTTP(S) popup requests open Sidebar tabs. Host-address filtering is not a general private-network or DNS-rebinding firewall.
+- Desktop stores website data in a persistent partition shared by all workspaces and Sessions in the current Desktop profile. Different canonical profile paths use different partitions within the same Electron user-data directory; another user-data directory has separate storage. Moving the profile to a different path can make existing site data inaccessible. Persistent cookies and Web storage can survive application restart, but session cookies and site expiry policies may require a new login. Closing a tab, deleting a Session or signing out of DSH does not clear site data. There is no dedicated site-data clearing control or automatic cleanup. Site logout may revoke a login but does not necessarily erase all local data; do not delete the entire application user-data directory as a browser-only reset. Guest permissions, downloads and native popups are denied; approved HTTP(S) popup requests open Sidebar tabs. Host-address filtering is not a general private-network or DNS-rebinding firewall.
 
 <a id="dev-note"></a>
 ### Dev Note

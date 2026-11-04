@@ -12,9 +12,9 @@ Independent per-tab storage also prevents related pages in one Workspace from sh
 
 ## Decision
 
-Desktop uses `<webview>` through `ElectronWebViewImpl`; Web retains its opt-in iframe carrier. The [Sidebar Browser decision](2026-09-16-sidebar-browser.md) owns shared tab behavior and iframe limitations; this note owns the Desktop carrier and Workspace-keyed partitions.
+Desktop uses `<webview>` through `ElectronWebViewImpl`; Web retains its opt-in iframe carrier. The [Sidebar Browser decision](2026-09-16-sidebar-browser.md) owns shared tab behavior and iframe limitations; this note owns the Desktop carrier; the later [persistent storage decision](2026-11-02-sidebar-browser-persistent-storage.md) supersedes its workspace-keyed partition policy.
 
-The [stable Sidebar mounting decision](../architecture/2026-09-20-sidebar-retained-tab-layout.md) owns retained Session and tab containers in real CSS layout. Workspace storage ownership and baseline guest security remain with this note.
+The [stable Sidebar mounting decision](../architecture/2026-09-20-sidebar-retained-tab-layout.md) owns retained Session and tab containers in real CSS layout. Baseline guest security remains with this note; the later storage decision defines profile-wide ownership.
 
 - `BrowserController` owns address commands and recoverable presentation state. Native history stays in the guest; actual URL and title observations update the persisted address.
 - Controller registries are keyed by DSH Session, independently of presentation bindings. Rebinding replaces the store writer without recreating the page.
@@ -28,9 +28,9 @@ Browser has separate Host and Client compiler programs. Desktop and the Host agg
 
 ### Storage ownership
 
-`DesktopBrowserGuests` assigns a random, non-persistent Electron partition to each canonical CWD account. The Client uses the Host-normalized `WorkspaceView.path`, not the Workspace record UUID, so recreating a Workspace at the same directory does not change its storage account key. Browser tabs whose DSH Sessions resolve to that CWD share the account; Sessions without a resolved Workspace remain separately isolated. Workspace membership is resolved after the Client receives its authoritative baseline and is fixed for a guest occurrence. The CWD key controls sharing, not disk persistence.
+`DesktopBrowserGuests` assigns a persistent Electron partition to the current Desktop profile, following the [persistent storage decision](2026-11-02-sidebar-browser-persistent-storage.md). All its workspaces and Sessions share site data, while guest leases remain separate.
 
-Closing a tab releases its guest, not its account's cookies or storage. Cookies, localStorage, IndexedDB, Service Workers and cache remain partition-owned and subject to normal origin rules. DOM, native history and sessionStorage remain page-owned. Account partitions survive window recreation within the Electron process but do not persist across application exit.
+Closing a tab releases its guest, not its account's cookies or storage. Cookies, localStorage, IndexedDB, Service Workers and cache remain partition-owned and subject to normal origin rules. DOM, native history and sessionStorage remain page-owned. Account partitions persist across application exit; session cookies and site policies may still require a new login.
 
 ### Initial guest policy
 
@@ -46,13 +46,13 @@ The Desktop toolbar has no sandbox-disable switch. The implementation adds no re
 
 **Move the guest between visible and hidden DOM containers.** Electron 44's `WebViewElement.disconnectedCallback` detaches the guest and resets its internal instance. Retaining the element reference or React key does not preserve that instance; the parent stays fixed instead.
 
-**Use one partition per tab.** This isolates site accounts between related pages. Workspace ownership provides the requested sharing without sharing the application Session; a tab still owns its own guest.
+**Use one partition per tab.** This isolates site accounts between related pages. Profile ownership provides the requested sharing without sharing the application Session; a tab still owns its own guest.
 
 **Change the partition of an active webview.** Electron fixes the partition before first navigation. Selecting another isolation scope requires a replacement guest and an explicit policy for existing site data, not a live attribute toggle.
 
 ## Consequences
 
-Sidebar-owned stable ancestors preserve the page without Browser-owned geometry or occlusion handling. Hidden guests retain page memory and may continue network activity; there is no idle eviction policy. Persistent storage, selectable isolation scopes and permission-grant UI remain separate work. Temporary Workspace partitions are the current policy, not a promise that Workspace isolation always implies temporary storage.
+Sidebar-owned stable ancestors preserve the page without Browser-owned geometry or occlusion handling. Hidden guests retain page memory and may continue network activity; there is no idle eviction policy. Selectable isolation scopes, site-data clearing controls and permission-grant UI remain separate work.
 
 Focused tests cover native navigation error recovery, preload listener scoping and migrated iframe behavior. They do not establish real Electron attachment timing, overlap, focus, platform styling or storage isolation; those remain runtime verification gaps. No GUI recording accompanies the change. This implementation is not evidence that the complete browser security policy is ready for release.
 

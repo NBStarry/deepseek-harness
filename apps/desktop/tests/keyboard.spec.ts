@@ -202,9 +202,9 @@ it.each([false, true])('blocks approved browser guest input across update overla
     { id: 'page.close', defaults: { 'desktop:macos': { code: 'KeyA', secondCode: 'KeyB', modifiers: [] } } },
     { id: 'sidebar.left.toggle', defaults: desktopDefaults({ code: 'KeyK', modifiers: ['primary'] }) },
   ])
-  const guests = new DesktopBrowserGuests(() => undefined) as GuestsFixture
+  const guests = new DesktopBrowserGuests(() => undefined, () => '/profile/a') as GuestsFixture
   guests.bind(f.window, (guest, name) => f.keyboard.attachGuest(f.window, guest, name))
-  const reservation = guests.acquire(f.contents, 'session:test')
+  const reservation = await guests.acquire(f.contents, 'session:test')
   const { frame, guest } = browserGuest(reservation)
   const attach = () => {
     const event = { preventDefault: vi.fn() }
@@ -711,14 +711,41 @@ it.each(['macos', 'windows'] as const)('requires fresh %s chord presses when Ele
   }
 })
 
+it('shares a stable persistent partition across workspaces in one profile', async () => {
+  const f = await fixture()
+  const first = new DesktopBrowserGuests(() => undefined, () => '/profile/a') as GuestsFixture
+  const restarted = new DesktopBrowserGuests(() => undefined, () => '/profile/a') as GuestsFixture
+  const otherProfile = new DesktopBrowserGuests(() => undefined, () => '/profile/b') as GuestsFixture
+  const workspace = await first.acquire(f.contents, 'cwd:/workspace/a')
+  const otherWorkspace = await first.acquire(f.contents, 'cwd:/workspace/b')
+  const afterRestart = await restarted.acquire(f.contents, 'session:ungrouped')
+  const separate = await otherProfile.acquire(f.contents, 'cwd:/workspace/a')
+  expect(workspace.partition).toMatch(/^persist:dsh-sidebar-browser-profile-v1-[0-9a-f]{64}$/)
+  expect(otherWorkspace.partition).toBe(workspace.partition)
+  expect(afterRestart.partition).toBe(workspace.partition)
+  expect(separate.partition).not.toBe(workspace.partition)
+  expect(new Set([workspace.lease, otherWorkspace.lease, afterRestart.lease]).size).toBe(3)
+  expect(() => first.acquire(f.contents, '')).toThrow('workspace storage identity is required')
+  expect(() => first.acquire(f.contents, 'a'.repeat(4097))).toThrow('workspace storage identity is required')
+})
+
+it('fails closed before profile preparation and for a destroyed owner', async () => {
+  const f = await fixture()
+  const guests = new DesktopBrowserGuests(() => undefined, () => '/profile/a') as GuestsFixture
+  vi.spyOn(f.contents as ContentsFixture, 'isDestroyed').mockReturnValue(true)
+  expect(() => guests.acquire(f.contents, 'profile')).toThrow('owner is destroyed')
+  const unavailable = new DesktopBrowserGuests(() => undefined, () => { throw new Error('profile not ready') }) as GuestsFixture
+  expect(() => unavailable.acquire(f.contents, 'profile')).toThrow('profile not ready')
+})
+
 it.each(['macos', 'windows', 'linux'] as const)('routes approved %s browser guest input to its owner and stops delivery before guest destruction', async (platform) => {
   const f = await fixture(platform)
   const snapshot = await f.call<ShortcutConfigSnapshot>(DESKTOP_IPC.shortcutsGet,
     [{ id: 'browser.new', defaults: desktopDefaults({ code: 'KeyT', modifiers: ['primary'] }) }])
-  const guests = new DesktopBrowserGuests(() => undefined) as GuestsFixture
+  const guests = new DesktopBrowserGuests(() => undefined, () => '/profile/a') as GuestsFixture
   const attach = vi.fn((guest: ContentsFixture, name: DesktopBrowserLeaseId) => f.keyboard.attachGuest(f.window, guest, name))
   guests.bind(f.window, attach)
-  const reservation = guests.acquire(f.contents, 'session:test')
+  const reservation = await guests.acquire(f.contents, 'session:test')
   const { frame, guest } = browserGuest(reservation)
   const rejected = { preventDefault: vi.fn() }
   f.contents.emit('will-attach-webview', rejected, {}, { src: 'about:blank#unknown', partition: reservation.partition })
