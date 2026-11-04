@@ -33,6 +33,12 @@
 
 - id: tool-executor-ptc
   disabled: false
+  config:
+    hybrid: false
+
+- id: tool-fs
+  config:
+    applyPatch: false
 
 - id: system-prompt
   name: '@deepseek-ai/dsh-system-prompt'

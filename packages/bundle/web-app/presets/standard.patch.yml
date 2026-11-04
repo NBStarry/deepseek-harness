@@ -27,8 +27,8 @@
           - id: tool-fs
             name: '@deepseek-ai/dsh-tool-fs'
             config:
-              # Set true to add the apply_patch tool beside edit.
-              applyPatch: false
+              # Enable batch patches alongside edit in standard sessions.
+              applyPatch: true
           - id: tool-fs-search
             name: '@deepseek-ai/dsh-tool-fs-search'
             config:
@@ -120,6 +120,10 @@
             config:
               fetch: true
               searchTimeoutMs: 60000
+          - id: tool-executor-ptc
+            name: '@deepseek-ai/dsh-tool-executor-ptc'
+            config:
+              hybrid: true
           - id: present
             name: '@deepseek-ai/dsh-tool-present'
           - id: tool-plugin-manager

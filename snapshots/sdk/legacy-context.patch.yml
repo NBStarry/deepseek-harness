@@ -1,6 +1,16 @@
 # Preserve the explicitly selected pre-desktop recorded compositions.
 # New SDK default-context scenarios do not apply this patch.
 
+- id: tool-executor-ptc
+  disabled: true
+
+- id: tool-executor-native
+  disabled: false
+
+- id: tool-fs
+  config:
+    applyPatch: false
+
 - id: present
   disabled: true
 

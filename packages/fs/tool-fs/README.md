@@ -55,7 +55,7 @@ Field names are snake_case to match Claude Code and existing harness tool schema
 
 ### Configuration
 
-All keys are optional. The `read`, `readImage`, `write`, and `edit` switches default to `true`; set a switch to `false` to omit that tool and its guidance. `applyPatch` defaults to `false`, so the default composition registers no `apply_patch`; the shipped `tool-fs` rows that enable `edit` ([`dsh-base`](../../bundle/base/cordis.patch.yml) and the Web `standard`, `ptc`, and `cordis` presets) state `applyPatch: false`, and changing that one line to `true` adds the tool beside `edit`. All five tools may be disabled. Enabling `readImage` still requires an attachment store and an image-capable model. Read caps remain validated when `read` is disabled.
+All keys are optional. The `read`, `readImage`, `write`, and `edit` switches default to `true`; set a switch to `false` to omit that tool and its guidance. `applyPatch` defaults to `false`. Web standard and SDK standard enable it beside `edit`; other shipped filesystem rows leave it disabled. Set `applyPatch: true` in a filesystem row to enable it in another composition. All five tools may be disabled. Enabling `readImage` still requires an attachment store and an image-capable model. Read caps remain validated when `read` is disabled.
 
 | Key | Default | Meaning |
 |---|---|---|

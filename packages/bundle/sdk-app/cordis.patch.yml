@@ -8,6 +8,19 @@
 - id: session-title-llm
   disabled: true
 
+# Standard SDK sessions retain native tools while adding the PTC transport.
+- id: tool-executor-native
+  disabled: true
+
+- id: tool-executor-ptc
+  disabled: false
+  config:
+    hybrid: true
+
+- id: tool-fs
+  config:
+    applyPatch: true
+
 - insert:
     - id: sdk-app-startup
       name: '@deepseek-ai/dsh-sdk-app'

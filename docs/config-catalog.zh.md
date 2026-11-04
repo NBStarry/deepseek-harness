@@ -3999,6 +3999,8 @@ export interface Config {
 ```ts config-catalog
 /** Program execution limits. */
 export interface Config {
+  /** Allow visible tools to be called directly alongside run_code. */
+  hybrid: boolean
   /** Maximum overlapping concurrency-safe program subcalls. */
   maxParallelSubCalls: number
 }

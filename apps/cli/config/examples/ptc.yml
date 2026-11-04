@@ -3,3 +3,10 @@
 
 - id: tool-executor-ptc
   disabled: false
+  config:
+    hybrid: false
+
+# Keep the pure PTC example aligned with its original filesystem catalog.
+- id: tool-fs
+  config:
+    applyPatch: false

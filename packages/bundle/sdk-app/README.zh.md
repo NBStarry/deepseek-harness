@@ -23,7 +23,7 @@ kind: "package-bundle"
 <a id="use-this-package"></a>
 ## 使用本包
 
-`sdk` profile 包含原生桌面工具和模型上下文。默认使用原生工具执行。需要 PTC 时，通过 `--patch` 或 TypeScript、Python SDK 的 `patches` 选项传入[执行器 overlay](../../../apps/cli/config/examples/ptc.yml)。`DSH_TOOLS_MODE` 不生效。
+`sdk` profile 包含桌面工具和模型上下文。默认的混合 PTC 模式将允许的工具与 `run_code` 一起直接提供，并启用 `apply_patch`。需要纯 PTC 时，通过 `--patch` 或 TypeScript、Python SDK 的 `patches` 选项传入[执行器 overlay](../../../apps/cli/config/examples/ptc.yml)。`DSH_TOOLS_MODE` 不生效。
 
 启动提供方把 stdin EOF 接到启动器的有界成功关闭流程。SDK 协议 `shutdown`、SIGINT 与 SIGTERM 继续使用各自所属的 server 或启动器路径；dispose（资源释放）会排空根 profile 配置树与持久化。stdout 专用于按换行分隔的 JSON-RPC 帧。SDK 不提供 title 表层，因此本组合包禁用模型生成的会话标题；确定性的 fallback title 仍会持久化，但不发起辅助模型请求。继承的投影缓存会为 SDK 创建的会话写入检查点，供后续消费方使用；其持久性屏障会在发布缓存行前 flush 所覆盖的日志前缀，因此可能拆分原本会合并的 JSONL 行。部署通过 profile 组合包与 patch 文件选择另一套完整组合，而不是使用另一个应用 bin。
 
@@ -33,9 +33,9 @@ kind: "package-bundle"
 
 `DSH_MAX_TOKENS_AS_SUCCESS` 保留 SDK 部署映射：未设置或 JSON `true` 把 token 达限的 subagent 完成报告为已接受，JSON `false` 则报告为错误。模型提供方／模型与工作区 cwd 通过 SDK 初始化请求传入；base profile 拥有适配器、工具、持久化、策略、settings 与 credentials。
 
-SDK 使用 base 默认提供的 `read`、`write` 和 `edit`。要添加 `str_replace_editor`，请使用 [base 配置指南](../base/README.zh.md#use-this-package)中的显式插入 patch。独立的 `sdk-minimal` profile 自行决定其工具选择。
+SDK 包含 base 的 `read`、`write` 和 `edit` 工具，并启用 `apply_patch`。要添加 `str_replace_editor`，请使用 [base 配置指南](../base/README.zh.md#use-this-package)中的显式插入 patch。独立的 `sdk-minimal` profile 自行决定其工具选择。
 
-模型可以在 native 和 PTC 模式下使用 [`plugin_manager`](../../boot/plugin-manager/README.zh.md)。每个操作（包括列举）都要求完整权限或本次调用的批准。默认 workspace-write/ask 策略需要客户端审批应答方：启用 `approvalRequests`，并通过 `harness.client.onRequest()` 处理 `approval/request`，或在组合中提供审批器。没有应答方时，操作因 unavailable 被拒绝。Python 安装/移除包时，先显式调用 `download_primary_runtime()` 准备 Node 和 pnpm，再启动运行时；打包启动器会将它们提供给插件管理，无需系统 pnpm。未选择载荷时，包操作仍要求 `PATH` 中有 `pnpm`，或显式配置 `plugin-manager.pnpmCommand`。可运行的接入方式见[交互审批示例](../../../python/sdk/examples/manage_plugins.py)。保存的 profile 变更返回 `restart-required` 和 `no-hmr`；当前运行时及其会话保留原有工具，直到调用方关闭并重新启动运行时。通过 profile patch 设置 `tool-plugin-manager.disabled: true` 可隐藏此工具。独立的 `sdk-minimal` profile 不包含它。
+模型可以在混合和纯 PTC 模式下使用 [`plugin_manager`](../../boot/plugin-manager/README.zh.md)。每个操作（包括列举）都要求完整权限或本次调用的批准。默认 workspace-write/ask 策略需要客户端审批应答方：启用 `approvalRequests`，并通过 `harness.client.onRequest()` 处理 `approval/request`，或在组合中提供审批器。没有应答方时，操作因 unavailable 被拒绝。Python 安装/移除包时，先显式调用 `download_primary_runtime()` 准备 Node 和 pnpm，再启动运行时；打包启动器会将它们提供给插件管理，无需系统 pnpm。未选择载荷时，包操作仍要求 `PATH` 中有 `pnpm`，或显式配置 `plugin-manager.pnpmCommand`。可运行的接入方式见[交互审批示例](../../../python/sdk/examples/manage_plugins.py)。保存的 profile 变更返回 `restart-required` 和 `no-hmr`；当前运行时及其会话保留原有工具，直到调用方关闭并重新启动运行时。通过 profile patch 设置 `tool-plugin-manager.disabled: true` 可隐藏此工具。独立的 `sdk-minimal` profile 不包含它。
 
 Python 运行时向本 profile 提供显式下载的创作资源和 Office sidecar。`DSH_PRIMARY_RUNTIME` 覆盖创作载荷；空值禁用其查询。Office skills 可独立使用任一种资源。Profile patch 可独立于 `workspace-dependencies` 禁用 `skill-office` 或替换其 `assetRoot`；同名文件系统 skills 优先。下载与配置见[运行时包](../../../python/sdk-runtime/README.zh.md)。
 
@@ -48,7 +48,7 @@ Python 运行时向本 profile 提供显式下载的创作资源和 Office sidec
 
 #### 模型看到什么
 
-profile 继承 base 系统提示词，包括 `You are an AI agent powered by DeepSeek Harness.` 身份说明，并添加与 Web 和 headless profile 相同、按当前模型插值的 coding persona。每个 Session 通过 [`dsh-working-directory`](../../session/working-directory/README.zh.md) 提供的必需 user-role 上下文接收当前目录。默认文件工具 schema 包含 `read`、`write` 和 `edit`，不包含 `str_replace_editor`。模型还会收到 `present`、`ask_user_question`、`plugin_manager`、定时任务工具、共用文件引用说明和时间上下文。子 agent 不能使用定时任务工具。[`time-context`](../../context/time-context/README.zh.md) 配置项接受回退时区。Skills 使用上述配置的资源。
+profile 继承 base 系统提示词，包括 `You are an AI agent powered by DeepSeek Harness.` 身份说明，并添加与 Web 和 headless profile 相同、按当前模型插值的 coding persona。每个 Session 通过 [`dsh-working-directory`](../../session/working-directory/README.zh.md) 提供的必需 user-role 上下文接收当前目录。默认文件工具 schema 包含 `read`、`write`、`edit` 和 `apply_patch`，不包含 `str_replace_editor`。模型还会收到 `run_code` 及其工具绑定声明。模型还会收到 `present`、`ask_user_question`、`plugin_manager`、定时任务工具、共用文件引用说明和时间上下文。子 agent 不能使用定时任务工具。[`time-context`](../../context/time-context/README.zh.md) 配置项接受回退时区。Skills 使用上述配置的资源。
 
 #### Token 影响
 

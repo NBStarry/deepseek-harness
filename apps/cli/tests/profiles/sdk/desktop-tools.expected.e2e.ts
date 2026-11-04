@@ -122,7 +122,7 @@ async function fixture(test: TestContext) {
     expect(requests.length).toBeGreaterThan(before)
     const presented = requests[before]!.tools.map(tool => tool.name).sort()
     if (mode === 'ptc') expect(presented).toEqual(['run_code'])
-    else expect(presented).toEqual(inventory.names)
+    else expect(presented).toEqual([...inventory.names, 'run_code'].sort())
     return inventory
   }
   return collect
@@ -133,6 +133,10 @@ it.for(['standard', 'ptc'] as const)('compares the shipped %s tool sets and perm
   const sdk = await collect('sdk', mode)
   const desktop = await collect('desktop', mode)
   assertToolParity(mode, sdk.names, desktop.names)
+  if (mode === 'standard') {
+    expect(sdk.names).toContain('edit')
+    expect(sdk.names).toContain('apply_patch')
+  }
   expect(sdk.names).toContain('plugin_manager')
   const optOut = await collect('sdk', mode, [{ id: 'tool-plugin-manager', disabled: true }])
   expect(optOut.names).not.toContain('plugin_manager')
