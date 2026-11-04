@@ -14,6 +14,10 @@ import type { DesktopBrowserLeaseId, DesktopBrowserReservation } from '@deepseek
 import { DESKTOP_IPC } from '../src/ipc.ts'
 
 const ipc = vi.hoisted(() => ({ handle: vi.fn(), removeHandler: vi.fn() }))
+const browserSessions = vi.hoisted(() => ({ fromPartition: vi.fn((_partition: string) => ({
+  setPermissionRequestHandler: vi.fn(), setPermissionCheckHandler: vi.fn(), setDevicePermissionHandler: vi.fn(),
+  setDisplayMediaRequestHandler: vi.fn(), on: vi.fn(), webRequest: { onBeforeRequest: vi.fn() },
+})) }))
 const overlays = await vi.hoisted(async () => {
   const { EventEmitter } = await import('node:events')
   class Window extends EventEmitter {
@@ -32,10 +36,8 @@ const overlays = await vi.hoisted(async () => {
   }
   return { Window }
 })
-vi.mock('electron', () => ({ ipcMain: ipc, BrowserWindow: overlays.Window, WebContentsView: overlays.Window, app: { isPackaged: true }, session: { fromPartition: () => ({
-  setPermissionRequestHandler: vi.fn(), setPermissionCheckHandler: vi.fn(), setDevicePermissionHandler: vi.fn(),
-  setDisplayMediaRequestHandler: vi.fn(), on: vi.fn(), webRequest: { onBeforeRequest: vi.fn() },
-}) } }))
+vi.mock('electron', () => ({ ipcMain: ipc, BrowserWindow: overlays.Window, WebContentsView: overlays.Window,
+  app: { isPackaged: true }, session: browserSessions }))
 const { installDesktopShortcuts } = await import('../src/keyboard.ts')
 const { DesktopBrowserGuests } = await import('../src/browser-guests.ts')
 const { DesktopUpdateOverlays } = await import('../src/update-overlay.ts')
@@ -727,6 +729,54 @@ it('shares a stable persistent partition across workspaces in one profile', asyn
   expect(new Set([workspace.lease, otherWorkspace.lease, afterRestart.lease]).size).toBe(3)
   expect(() => first.acquire(f.contents, '')).toThrow('workspace storage identity is required')
   expect(() => first.acquire(f.contents, 'a'.repeat(4097))).toThrow('workspace storage identity is required')
+})
+
+it('reuses profile storage after guest release and rejects a different partition at attachment', async () => {
+  const f = await fixture()
+  const guests = new DesktopBrowserGuests(() => undefined, () => '/profile/a') as GuestsFixture
+  const otherProfile = new DesktopBrowserGuests(() => undefined, () => '/profile/b') as GuestsFixture
+  guests.bind(f.window, vi.fn(() => vi.fn()))
+  const first = guests.acquire(f.contents, 'cwd:/workspace/a')
+  const separate = otherProfile.acquire(f.contents, 'cwd:/workspace/a')
+  const { frame, guest } = browserGuest(first)
+  const mismatched = { preventDefault: vi.fn() }
+  f.contents.emit('will-attach-webview', mismatched, {}, { src: frame.url, partition: separate.partition })
+  expect(mismatched.preventDefault).toHaveBeenCalledOnce()
+  const approved = { preventDefault: vi.fn() }
+  const preferences = { nodeIntegration: true }
+  f.contents.emit('will-attach-webview', approved, preferences, { src: frame.url, partition: first.partition })
+  expect(approved.preventDefault).not.toHaveBeenCalled()
+  expect(preferences).toMatchObject({ partition: first.partition, nodeIntegration: false, sandbox: true })
+  f.contents.emit('did-attach-webview', {}, guest)
+  guest.emit('dom-ready')
+  const released = guests.release(f.contents, first.lease)
+  expect(guest.close).toHaveBeenCalledExactlyOnceWith({ waitForBeforeUnload: false })
+  guest.emit('destroyed')
+  await released
+  const second = guests.acquire(f.contents, 'cwd:/workspace/b')
+  expect(second.partition).toBe(first.partition)
+  expect(second.lease).not.toBe(first.lease)
+  expect(browserSessions.fromPartition.mock.calls.map(([partition]) => partition)).toEqual([first.partition, separate.partition])
+  const stale = { preventDefault: vi.fn() }
+  f.contents.emit('will-attach-webview', stale, {}, { src: frame.url, partition: first.partition })
+  expect(stale.preventDefault).toHaveBeenCalledOnce()
+  const next = { preventDefault: vi.fn() }
+  f.contents.emit('will-attach-webview', next, {}, { src: `about:blank#${second.lease}`, partition: second.partition })
+  expect(next.preventDefault).not.toHaveBeenCalled()
+  await guests.release(f.contents, second.lease)
+  await otherProfile.release(f.contents, separate.lease)
+})
+
+it('retries session configuration after an initial failure without publishing a partition', async () => {
+  const f = await fixture()
+  const guests = new DesktopBrowserGuests(() => undefined, () => '/profile/a') as GuestsFixture
+  const failure = new Error('session unavailable')
+  browserSessions.fromPartition.mockImplementationOnce(() => { throw failure })
+  expect(() => guests.acquire(f.contents, 'cwd:/workspace/a')).toThrow(failure)
+  const retry = guests.acquire(f.contents, 'cwd:/workspace/b')
+  expect(browserSessions.fromPartition).toHaveBeenCalledTimes(2)
+  expect(browserSessions.fromPartition.mock.calls.map(([partition]) => partition)).toEqual([retry.partition, retry.partition])
+  await guests.release(f.contents, retry.lease)
 })
 
 it('fails closed before profile preparation and for a destroyed owner', async () => {

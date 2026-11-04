@@ -74,6 +74,11 @@ const harness = await vi.hoisted(async () => {
   const popup = vi.fn<(options: { window: FakeWindow; x?: number; y?: number; callback?: () => void }) => void>()
   const menuBuilder = vi.fn<(template: MenuItemConstructorOptions[]) => { popup: typeof popup }>(() => ({ popup }))
   const menu = Object.assign(menuBuilder, { buildFromTemplate: menuBuilder, setApplicationMenu: vi.fn() })
+  const browserSession = {
+    setPermissionRequestHandler: vi.fn(), setPermissionCheckHandler: vi.fn(), setDevicePermissionHandler: vi.fn(),
+    setDisplayMediaRequestHandler: vi.fn(), on: vi.fn(), webRequest: { onBeforeRequest: vi.fn() },
+  }
+  const browserSessionFromPartition = vi.fn((_partition: string) => browserSession)
   class FakeWindow extends EventEmitter {
     destroyed = false
     readonly contentView = { addChildView: vi.fn(), removeChildView: vi.fn() }
@@ -215,7 +220,8 @@ const harness = await vi.hoisted(async () => {
     failWindow(error: Error) { windowFailure = error },
     windows, views, hosts, handlers, app, FakeWindow, FakeView, FakeHost, powerMonitor, nativeTheme, analytics,
     trays, FakeTray, backgroundNotice, shellDialog,
-    menu, popup, socketHeaders: vi.fn(), loginShell, readLoginShell, updateCheck, updateDownload, updateInstall,
+    menu, popup, browserSessionFromPartition, socketHeaders: vi.fn(), loginShell, readLoginShell,
+    updateCheck, updateDownload, updateInstall,
     platformDispose,
     platformCloseAndWait,
 
@@ -274,6 +280,7 @@ const harness = await vi.hoisted(async () => {
       publishUpdate = undefined
       updateState = { phase: 'idle' }
       updateCheck.mockReset().mockImplementation(async () => updateState)
+      browserSessionFromPartition.mockClear()
       loginShell.mockReset().mockImplementation(base => readLoginShell(base))
       updateDownload.mockReset().mockImplementation(async () => updateState)
       updateInstall.mockReset().mockImplementation(async () => updateState)
@@ -316,7 +323,7 @@ vi.mock('electron', () => ({
     removeHandler: (channel: string) => { harness.handlers.delete(channel) },
   },
   Menu: { setApplicationMenu: harness.menu.setApplicationMenu, buildFromTemplate: harness.menu },
-  session: { defaultSession: {
+  session: { fromPartition: harness.browserSessionFromPartition, defaultSession: {
     on: vi.fn(),
     setPermissionCheckHandler: vi.fn(), setPermissionRequestHandler: vi.fn(), webRequest: { onBeforeSendHeaders: harness.socketHeaders },
   } },
@@ -1265,6 +1272,26 @@ describe('desktop main startup', () => {
     window.webContents.emit('will-navigate', internal, 'dsh-app://app/session/task-1')
     expect(internal.preventDefault).not.toHaveBeenCalled()
     expect(harness.openExternal).not.toHaveBeenCalled()
+  })
+
+  it('rejects browser acquisition before profile preparation and uses the canonical profile after startup', async () => {
+    await import('../src/main.ts')
+    await harness.preparing.promise
+    const owner = harness.windows[0]!.webContents
+    const event = { sender: owner, senderFrame: owner.mainFrame }
+    const acquire = harness.handlers.get(DESKTOP_IPC.browserAcquire)!
+    expect(() => acquire(event, 'profile')).toThrow('desktop browser: profile is not ready')
+    expect(harness.browserSessionFromPartition).not.toHaveBeenCalled()
+
+    harness.prepared.resolve()
+    await harness.hostStarted.promise
+    const reservation = acquire(event, 'profile') as { partition: string }
+    const { createHash } = await import('node:crypto')
+    const profileHash = createHash('sha256').update('/canonical/desktop-test-profile').digest('hex')
+    expect(reservation.partition).toBe(`persist:dsh-sidebar-browser-profile-v1-${profileHash}`)
+    expect(harness.browserSessionFromPartition).toHaveBeenCalledExactlyOnceWith(reservation.partition)
+    harness.hosts[0]!.ready.resolve()
+    await harness.navigated.promise
   })
 
   async function readyForUpdate() {
