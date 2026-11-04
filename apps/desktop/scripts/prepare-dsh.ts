@@ -164,7 +164,10 @@ async function main(): Promise<void> {
     if (!existsSync(join(DSH_OUTPUT_ROOT, 'node_modules', '@deepseek-ai', `libreoffice-kit-${officeEngine}`, 'prebuilds.json'))) {
       throw new Error(`desktop runtime: missing required LibreOffice engine ${officeEngine}`)
     }
-    await packagingStep(process.env.DSH_DESKTOP_PACKAGING_RUN_DIR, 'runtime:prepare-cua', async () => prepareDesktopCua(DSH_OUTPUT_ROOT, target))
+    const cuaSigning = target.platform === 'darwin' && process.env.DSH_DESKTOP_UNSIGNED !== '1'
+      ? resolveMacOSSigningEnvironment(process.env) : undefined
+    const cuaSource = resolve(APP_ROOT, '../../packages/experimental/cua-macos/native')
+    await packagingStep(process.env.DSH_DESKTOP_PACKAGING_RUN_DIR, 'runtime:prepare-cua', async () => prepareDesktopCua(DSH_OUTPUT_ROOT, target, cuaSource, cuaSigning))
     if (process.platform === 'darwin' && process.env.DSH_DESKTOP_UNSIGNED !== '1') {
       const cacheDirectory = resolveMacOSSignatureCacheDirectory(process.env, BUILD_PATHS.root)
       await packagingStep(process.env.DSH_DESKTOP_PACKAGING_RUN_DIR, 'sign:dsh-native', () => signMacOSRuntime(DSH_OUTPUT_ROOT, resolveDesktopAppId(process.env), resolveMacOSSigningEnvironment(process.env), target.arch, cacheDirectory))

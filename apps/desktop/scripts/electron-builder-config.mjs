@@ -212,7 +212,7 @@ export function createElectronBuilderConfig(
       // release, and a rewritten one for installed-update qualification.
       await verifyDesktopRuntime(buildPaths.dsh,
         preparedRuntimeVersion ?? productVersion, { platform: resolvedPlatform, arch: resolvedArch })
-      if (packagesMacOS) verifyDesktopCuaUnpacked(buildPaths.dsh, resourcesDir, resolvedArch)
+      if (packagesMacOS) verifyDesktopCuaUnpacked(buildPaths.dsh, resourcesDir, resolvedArch, macOSSigning)
       // Unsigned Windows builds skip electron-builder's afterSign hook.
       if (packagesWindows && unsigned) await verifyWindowsAsarUnpack(buildPaths.dsh, resourcesDir, windowsCode)
     },
@@ -226,6 +226,7 @@ export function createElectronBuilderConfig(
         await verifyWindowsAsarUnpack(buildPaths.dsh, context.packager.getResourcesDir(context.appOutDir), windowsCode)
       }
       if (context.electronPlatformName !== 'darwin' || unsigned) return
+      verifyDesktopCuaUnpacked(buildPaths.dsh, context.packager.getResourcesDir(context.appOutDir), resolvedArch, macOSSigning)
       const appPath = join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`)
       if (update !== undefined) {
         await verifyMacOSAppUpdateConfig(appPath, resolveMacOSAppUpdateFeed(context.packager.config.publish),
