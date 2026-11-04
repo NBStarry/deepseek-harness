@@ -2,6 +2,10 @@
 
 DeepSeek Harness is an all-plugin Cordis agent harness. Read [docs/architecture.md](docs/architecture.md) before changing `packages/`; follow [docs/AGENTS.md](docs/AGENTS.md) for documentation.
 
+## Development isolation
+
+Before editing, inspect the repository status and worktree list. Use a separate Git worktree and branch for each independent task or session, and open that session in its worktree; coordinate disjoint scopes when agents share a task. Keep the primary checkout for integration, preserve other sessions' changes, and coordinate shared refs. Do not automatically move existing sessions or delete worktrees; stage specific reviewed paths and push only with authorization.
+
 ## Pre-stable APIs and released Session data
 
 Public APIs are pre-stable; update every consumer. Follow [version/status](docs/session-format-status.md) and [type acknowledgements](docs/cookbook/reviewing-persistence-type-changes.md). [Adjacent migration](.agents/notes/implemented/architecture/2026-08-31-released-session-format-migrations.md) may add a version-named successor but never move, overwrite, or delete committed generations; predecessors imply neither fallback nor downgrade support. SQLite uses monotonic `SCHEMA_VERSION`.
