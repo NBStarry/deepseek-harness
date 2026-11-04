@@ -4,8 +4,12 @@ import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import { signMacOSRuntime } from '../scripts/macos-runtime.ts'
 import { signMacOSRuntimeCode, verifyMacOSRuntimeCode } from '../scripts/verify-macos-signature.mjs'
+import { verifyDesktopCua } from '../scripts/desktop-cua-native.mjs'
 
 vi.mock('../scripts/verify-macos-signature.mjs', () => ({ signMacOSRuntimeCode: vi.fn(), verifyMacOSRuntimeCode: vi.fn() }))
+vi.mock('../scripts/desktop-cua-native.mjs', async importOriginal => ({
+  ...await importOriginal<typeof import('../scripts/desktop-cua-native.mjs')>(), verifyDesktopCua: vi.fn(),
+}))
 const roots: string[] = []
 function root(): string {
   const path = mkdtempSync(join(tmpdir(), 'desktop-signing-'))
@@ -24,6 +28,35 @@ it('signs Mach-O files in their final locations and verifies each signature', as
   await expect(signMacOSRuntime(path, 'com.example.app', identity, 'arm64')).resolves.toBe(1)
   expect(signMacOSRuntimeCode).toHaveBeenCalledWith(join(path, 'addon.node'), expect.stringMatching(/^com\.example\.app\.runtime\.[a-f0-9]{64}$/u), identity, undefined)
   expect(verifyMacOSRuntimeCode).toHaveBeenCalledWith(join(path, 'addon.node'), identity)
+})
+
+it('protects only the validated selected helper from generic signing', async () => {
+  const path = root()
+  const directory = join(path, 'node_modules/@deepseek-ai/dsh-experimental-cua-macos/native/bin/darwin-arm64')
+  const app = join(directory, 'a'.repeat(64), 'DSH Computer Use.app')
+  const executable = join(app, 'Contents/MacOS/dsh-cua-native')
+  const intelDirectory = join(path, 'node_modules/@deepseek-ai/dsh-experimental-cua-macos/native/bin/darwin-x64')
+  const intelApp = join(intelDirectory, 'b'.repeat(64), 'DSH Computer Use.app')
+  const intelExecutable = join(intelApp, 'Contents/MacOS/dsh-cua-native')
+  const other = join(path, 'other.node')
+  for (const file of [executable, intelExecutable]) {
+    mkdirSync(join(file, '..'), { recursive: true })
+    writeFileSync(file, Buffer.from('cffaedfe00000000', 'hex'))
+  }
+  writeFileSync(other, Buffer.from('cffaedfe00000000', 'hex'))
+  vi.mocked(verifyDesktopCua).mockImplementation(directory => directory === intelDirectory
+    ? { application: intelApp, bundle: 'b'.repeat(64) } : { application: app, bundle: 'a'.repeat(64) })
+  await expect(signMacOSRuntime(path, 'com.example.app', identity, 'arm64')).resolves.toBe(1)
+  expect(verifyDesktopCua).toHaveBeenCalledWith(directory, 'arm64', identity)
+  expect(verifyDesktopCua).toHaveBeenCalledWith(intelDirectory, 'x64', identity)
+  expect(signMacOSRuntimeCode).toHaveBeenCalledWith(other, expect.any(String), identity, undefined)
+  for (const file of [executable, intelExecutable]) {
+    expect(signMacOSRuntimeCode).not.toHaveBeenCalledWith(file, expect.anything(), expect.anything(), expect.anything())
+  }
+  vi.mocked(verifyDesktopCua).mockImplementation(() => { throw new Error('untrusted helper') })
+  vi.mocked(signMacOSRuntimeCode).mockClear()
+  await expect(signMacOSRuntime(path, 'com.example.app', identity, 'arm64')).rejects.toThrow('untrusted helper')
+  expect(signMacOSRuntimeCode).not.toHaveBeenCalled()
 })
 
 // File symlinks in these macOS fixtures require privileges unavailable to ordinary Windows processes.

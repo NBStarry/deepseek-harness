@@ -72,11 +72,14 @@ def main():
     parser.add_argument("--identity", default="-", help="codesign identity; '-' produces a local ad-hoc build")
     args = parser.parse_args()
     architecture = "x64" if args.arch == "x86_64" else "arm64"
-    scratch = args.scratch_path or root / ".build" / f"runtime-{architecture}"
+    scratch = (args.scratch_path or root / ".build" / f"runtime-{architecture}").resolve()
     output = args.output_directory or root / "bin" / f"darwin-{architecture}"
+    module_cache = scratch / "module-cache"
     subprocess.run(["/usr/bin/xcrun", "swift", "build", "--package-path", str(root),
-                    "--scratch-path", str(scratch), "--configuration", "release",
-                    "--product", "dsh-cua-native", "--arch", args.arch], check=True)
+                    "--scratch-path", str(scratch), "--cache-path", str(scratch / "swiftpm-cache"),
+                    "--configuration", "release", "--product", "dsh-cua-native", "--arch", args.arch,
+                    "-Xswiftc", "-module-cache-path", "-Xswiftc", str(module_cache),
+                    "-Xbuild-tools-swiftc", "-module-cache-path", "-Xbuild-tools-swiftc", str(module_cache)], check=True)
     executable = publish(scratch / "release/dsh-cua-native", output, args.identity, root / "Info.plist")
     print(executable)
 

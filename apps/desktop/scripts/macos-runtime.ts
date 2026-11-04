@@ -1,7 +1,7 @@
 /** Sign final native runtime files before the enclosing Desktop application is signed. */
 
 import { createHash } from 'node:crypto'
-import { closeSync, openSync, readdirSync, readSync } from 'node:fs'
+import { closeSync, existsSync, openSync, readdirSync, readSync } from 'node:fs'
 import { join, relative, sep } from 'node:path'
 import { primaryRuntimePythonAliases, readPrimaryRuntime } from '../../../packages/skill/tool-workspace-dependencies/src/index.ts'
 import { inventoryDesktopRuntime } from '../src/runtime-tree.ts'
@@ -9,6 +9,7 @@ import type { MacOSSigningEnvironment } from './desktop-release-environment.mjs'
 import { cachedMacOSSignature, pruneMacOSSignatureCache } from './macos-signature-cache.ts'
 import { macOSCachePolicy } from './macos-cache-policy.ts'
 import { signMacOSRuntimeCode, verifyMacOSRuntimeCode } from './verify-macos-signature.mjs'
+import { desktopCuaHelperPath, verifyDesktopCua } from './desktop-cua-native.mjs'
 
 const MACH_O_MAGICS = new Set(['cafebabe', 'cafebabf', 'cefaedfe', 'cffaedfe', 'feedface', 'feedfacf', 'bebafeca', 'bfbafeca'])
 
@@ -47,7 +48,12 @@ export async function signMacOSRuntime(
   kind: 'desktop' | 'primary' = 'desktop',
 ): Promise<number> {
   const inventory = kind === 'primary' ? await primaryRuntimeFiles(root) : inventoryDesktopRuntime(root).map(file => file.path)
-  const files = inventory.filter(path => MACH_O_MAGICS.has(magic(join(root, path))))
+  const cuaApplications = kind === 'primary' ? [] : (['arm64', 'x64'] as const).flatMap((helperArch) => {
+    const directory = join(root, desktopCuaHelperPath(helperArch))
+    return existsSync(directory) ? [relative(root, verifyDesktopCua(directory, helperArch, expected).application).split(sep).join('/')] : []
+  })
+  const files = inventory.filter(path => !cuaApplications.some(application => path.startsWith(`${application}/`))
+    && MACH_O_MAGICS.has(magic(join(root, path))))
   const policy = cacheDirectory === undefined ? undefined : macOSCachePolicy(process.env.DSH_DESKTOP_MACOS_SIGNING_PROBE ?? '')
   let hits = 0
   let misses = 0

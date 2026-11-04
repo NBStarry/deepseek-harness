@@ -2,6 +2,7 @@
 import importlib.util
 import json
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -9,6 +10,40 @@ from unittest.mock import patch
 spec = importlib.util.spec_from_file_location("build_app", Path(__file__).resolve().parents[1] / "build_app.py")
 builder = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(builder)
+
+
+class BuildTests(unittest.TestCase):
+    def test_compile_uses_scratch_owned_swiftpm_and_module_caches(self):
+        with tempfile.TemporaryDirectory(prefix="cua-build-") as temporary:
+            scratch = Path(temporary).resolve() / "scratch with spaces"
+            output = Path(temporary) / "output"
+            argv = ["build_app.py", "--arch", "arm64", "--scratch-path", str(scratch),
+                    "--output-directory", str(output)]
+            with patch("sys.argv", argv), patch.object(builder.subprocess, "run") as run, \
+                    patch.object(builder, "publish", return_value=output / "helper") as publish, \
+                    patch("builtins.print"):
+                builder.main()
+            root = Path(builder.__file__).resolve().parent
+            cache = scratch / "module-cache"
+            run.assert_called_once_with([
+                "/usr/bin/xcrun", "swift", "build", "--package-path", str(root),
+                "--scratch-path", str(scratch), "--cache-path", str(scratch / "swiftpm-cache"),
+                "--configuration", "release", "--product", "dsh-cua-native", "--arch", "arm64",
+                "-Xswiftc", "-module-cache-path", "-Xswiftc", str(cache),
+                "-Xbuild-tools-swiftc", "-module-cache-path", "-Xbuild-tools-swiftc", str(cache),
+            ], check=True)
+            publish.assert_called_once_with(scratch / "release/dsh-cua-native", output, "-", root / "Info.plist")
+
+    def test_failed_compile_is_reported_without_publishing(self):
+        error = subprocess.CalledProcessError(1, ["swift", "build"], stderr="compiler diagnostic")
+        with patch("sys.argv", ["build_app.py", "--arch", "arm64"]), \
+                patch.object(builder.subprocess, "run", side_effect=error), \
+                patch.object(builder, "publish") as publish:
+            with self.assertRaises(subprocess.CalledProcessError) as raised:
+                builder.main()
+        self.assertIs(raised.exception, error)
+        self.assertEqual(raised.exception.stderr, "compiler diagnostic")
+        publish.assert_not_called()
 
 
 class PublicationTests(unittest.TestCase):

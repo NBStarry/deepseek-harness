@@ -73,6 +73,8 @@ describe('desktop macOS release signature', () => {
     expect(config.asarUnpack).toEqual(expect.arrayContaining([
       '**/*.{node,dylib,dll,so,exe}',
       '**/@vscode/ripgrep-*/bin/rg',
+      '**/node_modules/@deepseek-ai/dsh-experimental-cua-macos/native/bin/darwin-arm64/**/*',
+      '**/node_modules/@deepseek-ai/dsh-experimental-cua-macos/native/bin/darwin-x64/**/*',
     ]))
     expect(config).toMatchObject({
       appId: RELEASE_ENVIRONMENT.DSH_DESKTOP_APP_ID,
