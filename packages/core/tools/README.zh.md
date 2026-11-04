@@ -74,7 +74,7 @@ ctx.tools.register(defineTool({
 
 ### 选择执行器
 
-在部署、预设或 Agent 作用域中挂载一个执行器。最近的作用域决定提供者，同一作用域的重复提供者会报错。原生执行器直接公开可见能力；PTC 执行器公开 `run_code` 和生成的 SDK。执行器注册和卸载不触发 `tools/change`；提示词组装和批次执行在运行时解析当前执行器。
+在部署、预设或 Agent 作用域中挂载一个执行器。最近的作用域决定提供者，同一作用域的重复提供者会报错。原生执行器直接公开可见能力；PTC 执行器公开 `run_code` 和生成的 SDK，可选混合模式也公开允许的原生 schema。执行器未提供 `knownNames` 时，工具排序校验接受限制前的注册名称和执行器投影的 schema 名称；显式 `knownNames` 仍为准。执行器注册和卸载不触发 `tools/change`；提示词组装和批次执行在运行时解析当前执行器。
 
 ```yaml
 - name: '@deepseek-ai/dsh-tools'

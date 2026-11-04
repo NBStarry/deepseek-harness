@@ -20,26 +20,32 @@ const SDK_RENDERERS = {
 export class PtcExecutor implements ToolExecutor {
   readonly sections: readonly ToolPromptSection[]
   private readonly pipeline: ToolExecutionPipeline
+  private readonly hybrid: boolean
   private readonly maxParallelSubCalls: number
   private ptcTransport: ToolDefinition | undefined
 
   constructor(private readonly ctx: Context, config: Partial<Config> = {}, private readonly maxParallel: () => number = () => 10) {
-    this.maxParallelSubCalls = Config(config).maxParallelSubCalls
+    const resolved = Config(config)
+    this.hybrid = resolved.hybrid
+    this.maxParallelSubCalls = resolved.maxParallelSubCalls
     const tools = ctx.tools
     this.sections = [
-      { name: 'tools:ptc-only', order: ctx.systemPrompt.getSectionOrder('PTC_ONLY'), text: PTC_ONLY_INSTRUCTION, interpolate: false },
+      ...this.hybrid ? [] : [{ name: 'tools:ptc-only', order: ctx.systemPrompt.getSectionOrder('PTC_ONLY'), text: PTC_ONLY_INSTRUCTION, interpolate: false }],
       { name: 'tools:sdk', order: ctx.systemPrompt.getSectionOrder('TOOLS_SDK'), text: tools => this.renderSdk(tools), interpolate: false },
     ]
     this.pipeline = new ToolExecutionPipeline(ctx, {
       get: (name, scope, toolSet) => name === RUN_CODE_NAME ? this.requirePtcTransport() : tools.executable(name, scope, toolSet),
-      reject: (name, nested) => !nested && name !== RUN_CODE_NAME
+      reject: (name, nested) => !this.hybrid && !nested && name !== RUN_CODE_NAME
         ? new ToolNotFoundError(name, `only \`${RUN_CODE_NAME}\` is callable directly — call \`${name}\` from inside a \`${RUN_CODE_NAME}\` program instead`)
         : undefined,
     })
   }
 
-  describe(_tools: readonly ToolDefinition[]): ToolModelInput {
-    return { schemas: [projectToolSchema(this.requirePtcTransport(), false)], knownNames: [RUN_CODE_NAME] }
+  describe(tools: readonly ToolDefinition[]): ToolModelInput {
+    const transport = projectToolSchema(this.requirePtcTransport(), false)
+    return this.hybrid
+      ? { schemas: [...tools.map(tool => projectToolSchema(tool, false)), transport] }
+      : { schemas: [transport], knownNames: [RUN_CODE_NAME] }
   }
 
   private renderSdk(tools: readonly ToolDefinition[]): string {
@@ -77,7 +83,7 @@ export const inject = ['tools', 'systemPrompt', 'ptcRuntime']
 /**
  * Select PTC execution in the mounting scope.
  * @param ctx - context owning this executor's selection and lifetime.
- * @param config - program subcall concurrency limits.
+ * @param config - direct-call mode and program subcall concurrency limits.
  */
 export function apply(ctx: Context, config: Config): void {
   ctx.tools.setExecutor(new PtcExecutor(ctx, config))
