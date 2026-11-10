@@ -956,6 +956,32 @@ describe('mapStopReason / mapUsage', () => {
       .toMatchObject({ kind: 'error', failure: { code: 'TRANSPORT' } })
   })
 
+  it.each([
+    'WebSocket closed 1012',
+    'WebSocket closed 1012 service restart',
+  ])('classifies a WebSocket service restart without losing its message: %s', (errorMessage) => {
+    expect(mapStopReason(assistant({ stopReason: 'error', errorMessage }))).toEqual({
+      kind: 'error',
+      failure: { message: errorMessage, code: 'TRANSPORT' },
+    })
+  })
+
+  it.each([
+    'WebSocket closed 1000',
+    'WebSocket closed 1002',
+    'WebSocket closed 1008',
+    'WebSocket closed 1009',
+    'WebSocket closed 4001',
+    'WebSocket closed 10120',
+    'WebSocket closed 1012.5',
+    'WebSocket closed 1012unexpected',
+  ])('keeps other numeric WebSocket failures outside transport recovery: %s', (errorMessage) => {
+    expect(mapStopReason(assistant({ stopReason: 'error', errorMessage }))).toEqual({
+      kind: 'error',
+      failure: { message: errorMessage, code: 'PI_AI_ERROR' },
+    })
+  })
+
   it('uses pi-ai provider-specific overflow classification without losing rate-limit exclusions', () => {
     expect(mapStopReason(assistant({
       stopReason: 'error',
