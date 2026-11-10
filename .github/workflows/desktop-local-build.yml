@@ -1,0 +1,153 @@
+name: Desktop Local Unsigned Build
+
+# 仅用于个人主线：在 GitHub 托管的 macOS ARM64 上构建“只在本机安装”的无签名桌面包。
+# 不发布、不签名、不公证、不带更新源；产物 zip 由本地 desktop-install/install.sh 安装。
+# 该工作流应只存在于专用分支（如 chore/local-desktop-ci），不要合入 master：
+# workflow_dispatch 选择该分支运行，用 source_ref 指定真正要构建的提交。
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: '要构建的提交或分支（默认 master）'
+        type: string
+        default: master
+        required: true
+      build_version:
+        description: '完整版本号，必须形如 0.2.2-alpha.2.local.1.7'
+        type: string
+        required: true
+      test_command:
+        description: '可选测试命令，留空只构建'
+        type: string
+        default: ''
+        required: false
+      retention_days:
+        description: '产物保留天数'
+        type: string
+        default: '14'
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-local-unsigned
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: macos-14
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+    env:
+      NODE_OPTIONS: --max-old-space-size=8192
+      BUILD_VERSION: ${{ inputs.build_version }}
+    steps:
+      - name: Free disk space
+        run: |
+          df -h /
+          rm -rf /Users/runner/Library/Android /Users/runner/.gradle /Users/runner/.rustup || true
+          df -h /
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref }}
+          fetch-depth: 0
+
+      - name: Record source facts
+        id: facts
+        run: |
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "short=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "dirty=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "dirty=true" >> "$GITHUB_OUTPUT"
+          fi
+          echo "构建源：$(git rev-parse --short HEAD)"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Setup pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.28.5 --activate
+          pnpm --version
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run tests
+        if: inputs.test_command != ''
+        run: ${{ inputs.test_command }}
+
+      - name: Validate build version
+        id: version
+        run: |
+          node --input-type=module -e '
+          import { appendFileSync, readFileSync } from "node:fs"
+          import { validateDesktopBuildVersion } from "./apps/desktop/scripts/desktop-build-version.mjs"
+          const requested = process.env.BUILD_VERSION
+          const product = JSON.parse(readFileSync("apps/desktop/package.json", "utf8")).version
+          const version = validateDesktopBuildVersion(requested, product)
+          if (!version.includes(".local.")) throw new Error("build version must contain .local.")
+          console.log(`version=${version}`)
+          appendFileSync(process.env.GITHUB_OUTPUT, `version=${version}\n`)
+          '
+
+      - name: Package unsigned desktop app
+        run: |
+          pnpm run package:desktop:mac:arm64:unsigned -- --dir --build-version "${{ steps.version.outputs.version }}"
+
+      - name: Verify artifact
+        id: verify
+        run: |
+          app=$(find apps/desktop/.desktop-build/targets/mac-arm64 -maxdepth 3 -type d -name 'DeepSeek Harness.app' | head -1)
+          [ -n "$app" ] || { echo 'no packaged app found'; exit 1; }
+          codesign --verify --deep --strict "$app"
+          [ ! -e "$app/Contents/Resources/app-update.yml" ] || { echo 'unexpected update feed'; exit 1; }
+          actual=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")
+          [ "$actual" = "${{ steps.version.outputs.version }}" ] || { echo "version mismatch: $actual"; exit 1; }
+          echo "app=$app" >> "$GITHUB_OUTPUT"
+          echo "verified version $actual"
+
+      - name: Archive app
+        id: archive
+        run: |
+          name="DeepSeekHarness-${{ steps.version.outputs.version }}-${{ steps.facts.outputs.short }}.zip"
+          ditto -c -k --sequesterRsrc --keepParent "${{ steps.verify.outputs.app }}" "$name"
+          shasum -a 256 "$name" | tee "$name.sha256"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+
+      - name: Write provenance
+        run: |
+          cat > provenance.json <<JSON
+          {
+            "workflow": "desktop-local-unsigned-build",
+            "runId": "${{ github.run_id }}",
+            "runAttempt": "${{ github.run_attempt }}",
+            "sourceRef": "${{ inputs.source_ref }}",
+            "commit": "${{ steps.facts.outputs.commit }}",
+            "dirty": ${{ steps.facts.outputs.dirty }},
+            "version": "${{ steps.version.outputs.version }}",
+            "archive": "${{ steps.archive.outputs.name }}",
+            "runner": "macos-14"
+          }
+          JSON
+          cat provenance.json
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-local-${{ inputs.build_version }}
+          retention-days: ${{ inputs.retention_days }}
+          path: |
+            ${{ steps.archive.outputs.name }}
+            ${{ steps.archive.outputs.name }}.sha256
+            provenance.json
