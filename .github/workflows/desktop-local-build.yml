@@ -5,6 +5,8 @@ name: Desktop Local Unsigned Build
 # 该工作流应只存在于专用分支（如 chore/local-desktop-ci），不要合入 master：
 # workflow_dispatch 选择该分支运行，用 source_ref 指定真正要构建的提交。
 on:
+  push:
+    branches: [chore/local-desktop-ci]
   workflow_dispatch:
     inputs:
       source_ref:
@@ -43,7 +45,7 @@ jobs:
         shell: bash
     env:
       NODE_OPTIONS: --max-old-space-size=8192
-      BUILD_VERSION: ${{ inputs.build_version }}
+      BUILD_VERSION: ${{ inputs.build_version || '0.2.2-alpha.2.local.1.3' }}
     steps:
       - name: Free disk space
         run: |
@@ -54,7 +56,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.source_ref }}
+          ref: ${{ inputs.source_ref || 'master' }}
           fetch-depth: 0
 
       - name: Record source facts
@@ -132,7 +134,7 @@ jobs:
             "workflow": "desktop-local-unsigned-build",
             "runId": "${{ github.run_id }}",
             "runAttempt": "${{ github.run_attempt }}",
-            "sourceRef": "${{ inputs.source_ref }}",
+            "sourceRef": "${{ inputs.source_ref || 'master' }}",
             "commit": "${{ steps.facts.outputs.commit }}",
             "dirty": ${{ steps.facts.outputs.dirty }},
             "version": "${{ steps.version.outputs.version }}",
@@ -145,7 +147,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: desktop-local-${{ inputs.build_version }}
+          name: desktop-local-${{ env.BUILD_VERSION }}
           retention-days: ${{ inputs.retention_days }}
           path: |
             ${{ steps.archive.outputs.name }}
