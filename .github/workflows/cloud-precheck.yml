@@ -64,7 +64,6 @@ jobs:
       PATCH_SHA256: ${{ inputs.patch_sha256 }}
       COMMIT_OBJECT: ${{ inputs.commit_object }}
       COMMIT_OBJECT_SHA256: ${{ inputs.commit_object_sha256 }}
-      CANDIDATE_DIR: ${{ runner.temp }}/candidate
     steps:
       - name: Require Apple Silicon host
         run: |
@@ -104,6 +103,9 @@ jobs:
           echo "workflow_sha256=$workflow_sha" >> "$GITHUB_OUTPUT"
           echo "receipt_sha256=$receipt_sha" >> "$GITHUB_OUTPUT"
           echo "reconstruct_sha256=$reconstruct_sha" >> "$GITHUB_OUTPUT"
+          # job-level env cannot read the runner context; publish the candidate directory to
+          # later steps through the environment file instead.
+          echo "CANDIDATE_DIR=$RUNNER_TEMP/candidate" >> "$GITHUB_ENV"
           echo "trusted workflow $workflow_sha receipt $receipt_sha reconstruct $reconstruct_sha"
 
       - name: Reconstruct and verify candidate
@@ -132,12 +134,14 @@ jobs:
           test -z "$(git status --porcelain)"
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-        working-directory: ${{ env.CANDIDATE_DIR }}
+        run: |
+          cd "$CANDIDATE_DIR"
+          pnpm install --frozen-lockfile
 
       - name: Run typecheck
-        run: pnpm run typecheck
-        working-directory: ${{ env.CANDIDATE_DIR }}
+        run: |
+          cd "$CANDIDATE_DIR"
+          pnpm run typecheck
 
       - name: Emit receipt
         env:

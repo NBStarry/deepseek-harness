@@ -25,7 +25,7 @@ import { RECEIPT_SCHEMA, sha256, validateReceiptShape } from './receipt.mjs'
 export const PINS = Object.freeze({
   repository: 'NBStarry/deepseek-harness',
   workflowPath: '.github/workflows/cloud-precheck.yml',
-  workflowFileSha256: '4ea2f06693789e7308366d6bdd83344aa343a21d050edb24a02daad519fcb33b',
+  workflowFileSha256: '4414af7bd067f08aea4c9ecdc77b4313496fa3b6b77009025ae6d2a61357de7e',
   receiptScriptPath: 'scripts/cloud-precheck/receipt.mjs',
   receiptScriptSha256: 'c7e7b5a5c8aa9213b275ea8f259d4603d170f9a72db9f81c0e2cf48f295a0bc5',
   reconstructScriptPath: 'scripts/cloud-precheck/reconstruct.mjs',
