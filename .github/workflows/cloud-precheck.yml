@@ -1,0 +1,173 @@
+name: Cloud Precheck
+
+# Check-only gate for an unpushed commit: no packaging, no publishing, no install on the
+# developer machine. The pre-push hook admits a push only after this run's job, steps, and
+# receipt artifact verify through the GitHub API for the exact pushed commit.
+#
+# Deployment: GitHub registers a workflow_dispatch workflow only from the default branch,
+# so this file must reach the default branch before any dispatch or receipt can exist.
+# That first deployment is gate infrastructure and needs explicit authorization; the gate
+# has no bootstrap exception.
+
+on:
+  workflow_dispatch:
+    inputs:
+      base:
+        description: 'Verified baseline commit the patch applies to'
+        required: true
+        type: string
+      candidate_commit:
+        description: 'Exact commit id to rebuild and verify'
+        required: true
+        type: string
+      candidate_tree:
+        description: 'Tree id the rebuilt commit must carry'
+        required: true
+        type: string
+      patch:
+        description: 'base64(gzip(git diff --binary base..candidate))'
+        required: true
+        type: string
+      patch_sha256:
+        description: 'SHA-256 of the diff bytes that patch decodes to'
+        required: true
+        type: string
+      commit_object:
+        description: 'base64(gzip(git cat-file commit candidate))'
+        required: true
+        type: string
+      commit_object_sha256:
+        description: 'SHA-256 of the commit object bytes'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloud-precheck-${{ inputs.candidate_commit }}
+  cancel-in-progress: false
+
+jobs:
+  precheck:
+    runs-on: macos-15
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    env:
+      NODE_OPTIONS: --max-old-space-size=8192
+      BASE: ${{ inputs.base }}
+      CANDIDATE_COMMIT: ${{ inputs.candidate_commit }}
+      CANDIDATE_TREE: ${{ inputs.candidate_tree }}
+      PATCH: ${{ inputs.patch }}
+      PATCH_SHA256: ${{ inputs.patch_sha256 }}
+      COMMIT_OBJECT: ${{ inputs.commit_object }}
+      COMMIT_OBJECT_SHA256: ${{ inputs.commit_object_sha256 }}
+      CANDIDATE_DIR: ${{ runner.temp }}/candidate
+    steps:
+      - name: Require Apple Silicon host
+        run: |
+          arch=$(uname -m)
+          echo "Runner architecture: $arch"
+          [ "$arch" = arm64 ] || { echo 'cloud precheck requires an Apple Silicon runner' >&2; exit 1; }
+
+      - name: Checkout baseline
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.base }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Setup pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.28.5 --activate
+          pnpm --version
+
+      - name: Trusted gate definition
+        id: gate
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/gate"
+          git show "$GITHUB_SHA:.github/workflows/cloud-precheck.yml" > "$RUNNER_TEMP/gate/workflow.yml"
+          git show "$GITHUB_SHA:scripts/cloud-precheck/receipt.mjs" > "$RUNNER_TEMP/gate/receipt.mjs"
+          git show "$GITHUB_SHA:scripts/cloud-precheck/reconstruct.mjs" > "$RUNNER_TEMP/gate/reconstruct.mjs"
+          workflow_sha=$(shasum -a 256 "$RUNNER_TEMP/gate/workflow.yml" | cut -d' ' -f1)
+          receipt_sha=$(shasum -a 256 "$RUNNER_TEMP/gate/receipt.mjs" | cut -d' ' -f1)
+          reconstruct_sha=$(shasum -a 256 "$RUNNER_TEMP/gate/reconstruct.mjs" | cut -d' ' -f1)
+          echo "workflow_sha256=$workflow_sha" >> "$GITHUB_OUTPUT"
+          echo "receipt_sha256=$receipt_sha" >> "$GITHUB_OUTPUT"
+          echo "reconstruct_sha256=$reconstruct_sha" >> "$GITHUB_OUTPUT"
+          echo "trusted workflow $workflow_sha receipt $receipt_sha reconstruct $reconstruct_sha"
+
+      - name: Reconstruct and verify candidate
+        id: candidate
+        run: |
+          set -euo pipefail
+          started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          echo "started_at=$started_at" >> "$GITHUB_OUTPUT"
+          # The baseline checkout stays untouched: the candidate is rebuilt in a second clone.
+          test "$(git rev-parse HEAD)" = "$BASE"
+          test -z "$(git status --porcelain)"
+          node "$RUNNER_TEMP/gate/reconstruct.mjs" \
+            --source "$GITHUB_WORKSPACE" \
+            --work "$CANDIDATE_DIR" \
+            --base "$BASE" \
+            --candidate-commit "$CANDIDATE_COMMIT" \
+            --candidate-tree "$CANDIDATE_TREE" \
+            --patch "$PATCH" \
+            --patch-sha256 "$PATCH_SHA256" \
+            --commit-object "$COMMIT_OBJECT" \
+            --commit-object-sha256 "$COMMIT_OBJECT_SHA256"
+          test "$(git -C "$CANDIDATE_DIR" rev-parse HEAD)" = "$CANDIDATE_COMMIT"
+          test "$(git -C "$CANDIDATE_DIR" rev-parse 'HEAD^{tree}')" = "$CANDIDATE_TREE"
+          test -z "$(git -C "$CANDIDATE_DIR" status --porcelain)"
+          test "$(git rev-parse HEAD)" = "$BASE"
+          test -z "$(git status --porcelain)"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: ${{ env.CANDIDATE_DIR }}
+
+      - name: Run typecheck
+        run: pnpm run typecheck
+        working-directory: ${{ env.CANDIDATE_DIR }}
+
+      - name: Emit receipt
+        env:
+          WORKFLOW_FILE_SHA256: ${{ steps.gate.outputs.workflow_sha256 }}
+          RECEIPT_SCRIPT_SHA256: ${{ steps.gate.outputs.receipt_sha256 }}
+          RECONSTRUCT_SCRIPT_SHA256: ${{ steps.gate.outputs.reconstruct_sha256 }}
+          STARTED_AT: ${{ steps.candidate.outputs.started_at }}
+        run: |
+          set -euo pipefail
+          test "$(git -C "$CANDIDATE_DIR" rev-parse HEAD)" = "$CANDIDATE_COMMIT"
+          test "$(git -C "$CANDIDATE_DIR" rev-parse 'HEAD^{tree}')" = "$CANDIDATE_TREE"
+          test -z "$(git -C "$CANDIDATE_DIR" status --porcelain)"
+          test "$(git rev-parse HEAD)" = "$BASE"
+          test -z "$(git status --porcelain)"
+          node "$RUNNER_TEMP/gate/receipt.mjs" \
+            --out "$RUNNER_TEMP/receipt.json" \
+            --base "$BASE" \
+            --candidate-commit "$CANDIDATE_COMMIT" \
+            --candidate-tree "$CANDIDATE_TREE" \
+            --patch-sha256 "$PATCH_SHA256" \
+            --workflow-file-sha256 "$WORKFLOW_FILE_SHA256" \
+            --receipt-script-sha256 "$RECEIPT_SCRIPT_SHA256" \
+            --reconstruct-script-sha256 "$RECONSTRUCT_SCRIPT_SHA256" \
+            --started-at "$STARTED_AT" \
+            --finished-at "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+      - name: Upload receipt
+        uses: actions/upload-artifact@v4
+        with:
+          name: cloud-precheck-${{ inputs.candidate_commit }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/receipt.json
+          if-no-files-found: error
+          retention-days: 14

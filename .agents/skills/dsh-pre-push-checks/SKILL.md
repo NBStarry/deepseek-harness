@@ -5,7 +5,7 @@ description: Use before pushing, force-pushing, marking ready for review, or cla
 
 # DSH Pre-Push Checks
 
-Use this skill to run relevant local evidence once before a `deepseek-harness` push. The sole ordering exception is `gh stack sync`, which may publish a cascading rebase before the rewritten layers can be validated; validate them immediately afterward and do not merge until the evidence passes. Git hooks are intentionally narrow: pre-commit fixes staged lint, checks staged whitespace, and guards vendored-source metadata; pre-push runs only the incremental repository typecheck. CI owns exhaustive coverage and the platform matrix.
+Use this skill to run relevant local evidence once before a `deepseek-harness` push. The sole ordering exception is `gh stack sync`, which may publish a cascading rebase before the rewritten layers can be validated; validate them immediately afterward and do not merge until the evidence passes. Git hooks are intentionally narrow: pre-commit fixes staged lint, checks staged whitespace, and guards vendored-source metadata; pre-push runs only `scripts/cloud-precheck/verify-push.mjs`, which verifies a hosted typecheck run for the pushed commits and builds nothing locally ([README](../../../scripts/cloud-precheck/README.md)). CI owns exhaustive coverage and the platform matrix.
 
 ## Inspect the outgoing change
 
@@ -40,7 +40,7 @@ When the outgoing change adds or changes a resource-owning or asynchronous test,
 - **Repository test and script types:** `pnpm run build:artifacts` checks package projects only. Before claiming completion of TypeScript changes, run `pnpm run build:check` after the latest `build:artifacts`, or run `pnpm run build`; `build:check` reads the existing `build:artifacts` output and never rebuilds it.
 - **Real provider or agent behavior:** run the relevant `pnpm run test:e2e` target when credentials are available; never print secrets.
 
-Do not manually repeat a passing check merely because commit or push follows. In particular, do not run typecheck immediately before pushing solely to duplicate the pre-push hook.
+Do not manually repeat a passing check merely because commit or push follows. In particular, do not run typecheck immediately before pushing solely to duplicate the hosted typecheck the pre-push gate verifies.
 
 Pass Vitest file and name filters directly after the script name with `pnpm run`; do not insert a standalone `--`, which reaches Vitest and can disable `-t` filtering. For example, this command runs one headless snapshot scenario:
 
@@ -111,7 +111,7 @@ For ordinary and standalone rebase pushes:
 
 1. Run the selected relevant checks once.
 2. Commit normally and inspect any files changed by the pre-commit fixer before continuing.
-3. Push normally, or use the exact lease for an authorized rewritten branch, so the incremental typecheck hook runs.
+3. Push normally, or use the exact lease for an authorized rewritten branch, so the pre-push gate verifies the pushed commits.
 4. Verify the remote ref matches local `HEAD`.
 
 ```sh

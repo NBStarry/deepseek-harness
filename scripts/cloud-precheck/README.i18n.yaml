@@ -1,0 +1,28 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write scripts/cloud-precheck/README.md
+/cloud-precheck-gate:
+  en: 94285be8697d2579
+  zh: 6ed76b03e1898fe3
+/cloud-precheck-gate/what-the-gate-proves:
+  en: ca6badcb33babb4e
+  zh: 1abf9131ee834f47
+/cloud-precheck-gate/what-the-gate-proves-about-the-candidate:
+  en: 6e0e4d57253cb304
+  zh: d30548dd155cf391
+/cloud-precheck-gate/what-the-gate-does-not-prove:
+  en: 434bd6c52c7e52fd
+  zh: 92d759aea73edd4b
+/cloud-precheck-gate/one-distinct-tip-per-push:
+  en: c79f6d82736dd32e
+  zh: 7a0d5ac56ef62ec7
+/cloud-precheck-gate/issuing-a-receipt:
+  en: b32c996b9be582d9
+  zh: 48e6581d4bea71bf
+/cloud-precheck-gate/deployment-needs-separate-authorization:
+  en: 497eea21d5964d1b
+  zh: 9da649ac51f439db
+/cloud-precheck-gate/trust-boundaries:
+  en: 1168947c45aafc26
+  zh: 1649ebff8754fe1b

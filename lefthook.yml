@@ -45,5 +45,9 @@ pre-merge-commit:
 
 pre-push:
   jobs:
-    - name: typecheck
-      run: pnpm run typecheck
+    # The gate proves the exact pushed commit ran the repository typecheck on a hosted
+    # runner; it fails closed when no verified receipt exists. See
+    # scripts/cloud-precheck/README.md.
+    - name: cloud precheck receipt
+      use_stdin: true
+      run: node scripts/cloud-precheck/verify-push.mjs '{1}' '{2}'

@@ -143,7 +143,7 @@ lefthook is configured in `lefthook.yml` as a fast local checkpoint:
 
 - `pre-commit` verifies staged pairing records against the staged owner blobs, validates staged files with the project-free `.oxlintrc.staged.json` profile and applies Oxlint fixes with one bounded retry, checks the staged diff for whitespace errors, checks pi-ai provider metadata when its inputs or generated file are staged, and runs the vendor manifest guard.
 - `pre-merge-commit` performs the same index-backed pairing check before Git creates an automatic merge commit.
-- `pre-push` runs `pnpm run typecheck`, which generates Typert contracts without bundling before the Client TypeScript check and checks both aggregates.
+- `pre-push` runs `node scripts/cloud-precheck/verify-push.mjs`, which admits the pushed commits only when a verified cloud precheck receipt covers each one; [the cloud precheck README](../scripts/cloud-precheck/README.md) owns the checks, the receipt, and the deployment prerequisite. `pnpm run typecheck` stays available locally but is not a gate fallback.
 
 The vendor manifest guard checks that changes under `vendor/*/src` are staged with the matching `vendor/README.md` manifest update. See `vendor/README.md` before editing vendored code.
 

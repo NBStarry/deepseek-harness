@@ -148,7 +148,7 @@ lefthook 在 `lefthook.yml` 中配置，作为快速的本地检查点：
 
 - `pre-commit` 对照暂存的配对文档 blob 校验暂存的配对记录，使用不加载项目的 `.oxlintrc.staged.json` 配置验证暂存文件，并通过一次有界重试应用 Oxlint 修复，然后检查暂存 diff 中的空白错误，在 pi-ai 提供方元数据的输入或生成文件已暂存时校验元数据，并运行 vendor manifest（元数据清单）守卫；
 - `pre-merge-commit` 在 Git 创建自动合并提交前执行同样以索引为准的配对检查；
-- `pre-push` 运行 `pnpm run typecheck`；该命令先不打包地生成 Typert 约定，再运行 Client TypeScript 检查，并检查两个 aggregate。
+- `pre-push` 运行 `node scripts/cloud-precheck/verify-push.mjs`；只有每个待推送提交都有已核验的云端预检回执时才会放行。[云端预检 README](../scripts/cloud-precheck/README.zh.md)说明具体检查、回执和部署前提。`pnpm run typecheck` 仍可在本地运行，但不是门禁的回退方式。
 
 vendor manifest 守卫检查 `vendor/*/src` 下的改动是否连同对应的 `vendor/README.md` manifest 更新一起暂存。请在编辑 vendor 代码前先阅读 `vendor/README.md`。
 
