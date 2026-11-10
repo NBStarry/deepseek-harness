@@ -2,8 +2,7 @@ name: Desktop Local Unsigned Build
 
 # 仅用于个人主线：在 GitHub 托管的 macOS ARM64 上构建“只在本机安装”的无签名桌面包。
 # 不发布、不签名、不公证、不带更新源；产物 zip 由本地 desktop-install/install.sh 安装。
-# 该工作流应只存在于专用分支（如 chore/local-desktop-ci），不要合入 master：
-# workflow_dispatch 选择该分支运行，用 source_ref 指定真正要构建的提交。
+# 工作流保留在默认分支 master，以便手动触发；source_ref 指定要构建的提交。
 on:
   workflow_dispatch:
     inputs:
@@ -36,7 +35,7 @@ concurrency:
 
 jobs:
   build:
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 90
     defaults:
       run:
@@ -45,6 +44,12 @@ jobs:
       NODE_OPTIONS: --max-old-space-size=8192
       BUILD_VERSION: ${{ inputs.build_version }}
     steps:
+      - name: Require Apple Silicon host
+        run: |
+          arch=$(uname -m)
+          echo "Runner architecture: $arch"
+          [ "$arch" = arm64 ] || { echo 'mac-arm64 requires an Apple Silicon build host' >&2; exit 1; }
+
       - name: Free disk space
         run: |
           df -h /
@@ -137,7 +142,7 @@ jobs:
             "dirty": ${{ steps.facts.outputs.dirty }},
             "version": "${{ steps.version.outputs.version }}",
             "archive": "${{ steps.archive.outputs.name }}",
-            "runner": "macos-14"
+            "runner": "macos-15"
           }
           JSON
           cat provenance.json
