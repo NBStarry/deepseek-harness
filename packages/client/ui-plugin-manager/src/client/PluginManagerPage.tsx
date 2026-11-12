@@ -1570,11 +1570,12 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
   }, [highlight, clearHighlight])
   const noticeLine = state.notice === null || state.notice.kind === 'refresh-failed' ? null : noticeText(state.notice, t)
 
-  // The page omits profile bundles and persistent terminals. Other installed or offered bundles and
-  // unreadable selections remain manageable; Settings' Plugin list inspects the full Host inventory.
+  // The page omits profile bundles and persistent terminals. Other installed or offered bundles,
+  // unreadable selections, and removable selections that load without error remain manageable;
+  // Settings' Plugin list inspects the full Host inventory.
   const listed = state.packages.filter(pkg => !HIDDEN_BUNDLES.has(pkg.name)
     && (pkg.listedByDefault !== false || pkg.enabled || pkg.installed || rowsRunning(pkg))
-    && (pkg.installed || pkg.official || pkg.error !== undefined))
+    && (pkg.installed || pkg.official || pkg.error !== undefined || pkg.removable))
   const mine = listed.filter(pkg => !pkg.official)
   const official = listed.filter(pkg => pkg.official)
   // Both lists read one order over the eligible bundles: the main list holds the always-held ones plus the held-back

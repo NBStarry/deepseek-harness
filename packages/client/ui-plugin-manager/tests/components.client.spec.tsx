@@ -870,14 +870,34 @@ describe('PluginManagerPage', () => {
     expect(document.querySelectorAll('[data-plugin-count]')).toHaveLength(0)
   })
 
-  it('offers uninstall for a selected bundle that no dependency holds', () => {
+  it.each([
+    ['unreadable selection', { code: 'operation-error', diagnostic: 'cannot resolve' }],
+    ['selection that loads without error', undefined],
+  ] as const)('offers uninstall for a selected bundle that no dependency holds (%s)', (_label, error) => {
     const { actions } = renderTab({
-      packages: [pkg({ name: 'dsh-retired', installed: false, removable: true, error: { code: 'operation-error', diagnostic: 'cannot resolve' } })],
+      packages: [pkg({ name: 'dsh-retired', installed: false, removable: true, ...(error === undefined ? {} : { error }) })],
     })
+    expect(document.querySelector('[data-plugin-package="dsh-retired"]')).not.toBeNull()
     fireEvent.click(screen.getByRole('button', { name: en.openDetail.replace('{name}', 'dsh-retired') }))
     const detail = document.querySelector('[data-plugin-detail]') as HTMLElement
     fireEvent.click(within(detail).getByRole('button', { name: en.uninstallLabel.replace('{name}', 'dsh-retired') }))
     expect(actions.uninstall).toHaveBeenCalledExactlyOnceWith('dsh-retired')
+  })
+
+  it('keeps non-removable, uninstalled local bundles that load out of the default list', () => {
+    renderTab({
+      packages: [pkg({ name: 'local-not-removable', official: false, installed: false, removable: false, enabled: false })],
+    })
+    expect(document.querySelector('[data-plugin-package="local-not-removable"]')).toBeNull()
+  })
+
+  it('keeps a removable hidden bundle hidden', () => {
+    // A real HIDDEN_BUNDLES member stays out of the page even when the Host reports it enabled and removable.
+    const hidden = '@deepseek-ai/dsh-base'
+    renderTab({
+      packages: [pkg({ name: hidden, official: true, installed: false, removable: true, enabled: true, listedByDefault: true })],
+    })
+    expect(document.querySelector(`[data-plugin-package="${hidden}"]`)).toBeNull()
   })
 
   it('opens an official bundle\'s page with its beta tag and no uninstall, and switches it on', () => {
