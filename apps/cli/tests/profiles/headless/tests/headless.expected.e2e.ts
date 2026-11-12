@@ -75,6 +75,8 @@ interface DeepSeekDefaultsServer {
   readonly url: string
   readonly requests: JsonObject[]
   readonly paths: string[]
+  /** Epoch milliseconds when each request finished arriving, for failure diagnostics only. */
+  readonly requestedAt?: number[]
   close(): Promise<void>
 }
 
@@ -102,6 +104,7 @@ async function deepseekDefaultsServer(
 ): Promise<DeepSeekDefaultsServer> {
   const requests: JsonObject[] = []
   const paths: string[] = []
+  const requestedAt: number[] = []
   const server = createServer((request: IncomingMessage, response: ServerResponse) => {
     let body = ''
     request.setEncoding('utf8')
@@ -109,6 +112,7 @@ async function deepseekDefaultsServer(
     request.on('end', () => {
       requests.push(JSON.parse(body) as JsonObject)
       paths.push(request.url ?? '')
+      requestedAt.push(Date.now())
       response.writeHead(200, { 'content-type': 'text/event-stream' })
       let keepAlives = 3
       const write = (): void => {
@@ -148,6 +152,7 @@ async function deepseekDefaultsServer(
     url: `http://127.0.0.1:${address.port}`,
     requests,
     paths,
+    requestedAt,
     close: () => new Promise(resolve => server.close(() => { resolve() })),
   }
 }
@@ -860,6 +865,26 @@ describe('headless stream-json snapshots', () => {
       })
 
       expect(result.stderr).toBe('')
+      if (server.requests.length !== 2) {
+        // Failure-only diagnostics: classify requests without printing prompts, credentials, or headers.
+        const started = server.requestedAt?.[0]
+        console.error('HEADLESS_DEFAULTS_REQUEST_DIAG', JSON.stringify({
+          count: server.requests.length,
+          requests: server.requests.map((request, index) => {
+            const at = server.requestedAt?.[index]
+            return {
+              index,
+              isTitle: isTitleRequest(request),
+              maxTokens: request.max_tokens,
+              model: request.model,
+              stream: request.stream,
+              messageCount: Array.isArray(request.messages) ? request.messages.length : null,
+              path: server.paths[index],
+              atMs: started === undefined || at === undefined ? null : at - started,
+            }
+          }),
+        }))
+      }
       expect(server.requests).toHaveLength(2)
       expect(server.paths).toEqual(['/v1/messages', '/v1/messages'])
       const agentRequest = server.requests.find(request => request.max_tokens === 256_000)
