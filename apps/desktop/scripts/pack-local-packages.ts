@@ -202,6 +202,16 @@ export function replaceCuaTarball(
   renameSync(stagedTarball, original)
 }
 
+/**
+ * Build the pnpm arguments that pack the staged CUA provider without running its lifecycle scripts.
+ * @param provider - Staged provider directory.
+ * @param output - Tarball destination directory.
+ * @returns pnpm arguments; `pnpm pack` reads `--config.ignore-scripts` but rejects the `--ignore-scripts` flag.
+ */
+export function cuaPackArguments(provider: string, output: string): string[] {
+  return ['--dir', provider, '--config.ignore-scripts=true', 'pack', '--pack-destination', output]
+}
+
 async function main(): Promise<void> {
   const { values } = parseArgs({
     options: { out: { type: 'string' }, concurrency: { type: 'string' } },
@@ -231,7 +241,7 @@ async function main(): Promise<void> {
     const packed = await packFamilyMembers(root, family, destination, concurrency)
     const output = join(stage, 'packed')
     mkdirSync(output)
-    const invocation = pnpmInvocation(['--dir', provider, '--ignore-scripts', 'pack', '--pack-destination', output])
+    const invocation = pnpmInvocation(cuaPackArguments(provider, output))
     await runConcurrent(invocation.command, invocation.args, { cwd: stage })
     const tarball = join(output, tarballName(member))
     await validatePackedCua(tarball, provider)

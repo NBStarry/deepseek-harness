@@ -1,12 +1,14 @@
 /** Pure fixtures for the opt-in Desktop CUA packing path. */
+import { execFileSync } from 'node:child_process'
 import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
 import { create } from 'tar'
 import { cuaApplicationDigest } from '../../../scripts/cua-helper/payload.ts'
+import { pnpmInvocation } from '../../../scripts/pnpm-invocation.ts'
 import { releaseFamily, tarballName } from '../../../scripts/release/families.ts'
-import { localCuaEnabled, replaceCuaTarball, stageCuaProvider, validatePackedCua } from '../scripts/pack-local-packages.ts'
+import { cuaPackArguments, localCuaEnabled, replaceCuaTarball, stageCuaProvider, validatePackedCua } from '../scripts/pack-local-packages.ts'
 import { resolveDesktopPackageTarget, validateDesktopCuaOption } from '../scripts/package-target.ts'
 
 const roots: string[] = []
@@ -132,4 +134,30 @@ it('replaces only the matched provider family tarball after validating identity 
   replaceCuaTarball(family, member, join(staged, filename), destination, [filename])
   expect(readFileSync(join(destination, filename))).toEqual(bytes)
   expect(readFileSync(join(destination, 'other.tgz'), 'utf8')).toBe('other')
+})
+
+it('packs the staged provider with all pack lifecycle scripts disabled by the supported pnpm config', () => {
+  const root = fixture()
+  const stage = join(root, 'stage')
+  const provider = join(stage, 'provider')
+  const output = join(root, 'packed')
+  const sentinels = join(root, 'sentinels')
+  const scripts = ['prepack', 'prepare', 'postpack'] as const
+  write(stage, 'pnpm-workspace.yaml', 'packages:\n  - provider\n')
+  write(provider, 'index.js', 'export {}\n')
+  write(provider, 'package.json', JSON.stringify({
+    name: 'cua-pack-lifecycle', version: '1.0.0', files: ['index.js'],
+    scripts: Object.fromEntries(scripts.map(script => [
+      script,
+      `node -e "require('node:fs').writeFileSync(require('node:path').join(process.env.CUA_PACK_SENTINELS, '${script}'), '1')"`,
+    ])),
+  }))
+  mkdirSync(output)
+  mkdirSync(sentinels)
+  const invocation = pnpmInvocation(cuaPackArguments(provider, output))
+  execFileSync(invocation.command, invocation.args, {
+    cwd: stage, stdio: 'pipe', env: { ...process.env, CUA_PACK_SENTINELS: sentinels },
+  })
+  expect(existsSync(join(output, 'cua-pack-lifecycle-1.0.0.tgz'))).toBe(true)
+  for (const script of scripts) expect(existsSync(join(sentinels, script))).toBe(false)
 })
