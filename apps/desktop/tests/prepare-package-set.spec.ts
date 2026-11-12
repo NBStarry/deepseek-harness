@@ -111,6 +111,44 @@ const targetManifests = () => new Map<string, PackedDesktopPackage>([
   [macProvider, packed(macProvider, { os: ['darwin'] })],
 ])
 
+it('selects the complete CUA workspace closure only when opted in', () => {
+  const packages = targetManifests()
+  packages.set('@deepseek-ai/dsh', packed('@deepseek-ai/dsh'))
+  packages.set(macProvider, packed(macProvider, { os: ['darwin'], dependencies: { '@deepseek-ai/dsh-atomic-write': '1.0.0' } }))
+  packages.set('@deepseek-ai/dsh-atomic-write', packed('@deepseek-ai/dsh-atomic-write'))
+  const target = { platform: 'darwin', arch: 'arm64' } as const
+  expect(selectDesktopPackageClosure(packages, target).map(entry => entry.manifest.name)).toEqual([
+    '@deepseek-ai/dsh', '@deepseek-ai/dsh-desktop-host',
+  ])
+  expect(selectDesktopPackageClosure(packages, target, { includeCua: true, unsigned: true })
+    .map(entry => entry.manifest.name)).toEqual([
+    '@deepseek-ai/dsh', '@deepseek-ai/dsh-atomic-write', '@deepseek-ai/dsh-cua', cuaBundle,
+    '@deepseek-ai/dsh-desktop-host', macProvider,
+  ])
+  for (const missing of [cuaBundle, '@deepseek-ai/dsh-cua', macProvider, '@deepseek-ai/dsh-atomic-write']) {
+    const incomplete = new Map(packages)
+    incomplete.delete(missing)
+    expect(() => selectDesktopPackageClosure(incomplete, target, { includeCua: true, unsigned: true })).toThrow(missing)
+  }
+})
+
+it('checks CUA optional workspace dependencies even when already selected by another root', () => {
+  const packages = targetManifests()
+  packages.delete(macProvider)
+  expect(() => selectDesktopPackageClosure(packages, { platform: 'darwin', arch: 'arm64' }, {
+    includeCua: true, unsigned: true,
+  })).toThrow(macProvider)
+})
+
+it.each([
+  [{ platform: 'darwin', arch: 'arm64' }, false],
+  [{ platform: 'darwin', arch: 'x64' }, true],
+  [{ platform: 'win32', arch: 'x64' }, true],
+] as const)('rejects CUA opt-in for target %j and unsigned=%s', (target, unsigned) => {
+  expect(() => selectDesktopPackageClosure(targetManifests(), target, { includeCua: true, unsigned }))
+    .toThrow(/CUA requires unsigned mac-arm64/u)
+})
+
 it.each([
   ['darwin', 'arm64', true], ['darwin', 'x64', true], ['win32', 'x64', false],
 ] as const)('selects the CUA native tarball for target %s/%s independently of the host', (platform, arch, included) => {
@@ -161,4 +199,42 @@ it('copies no macOS tarball into the Windows package set', () => {
   prepareDesktopPackageSet([inputs], output, { platform: 'darwin', arch: 'arm64' })
   expect(readFileSync(join(output, DESKTOP_PACKAGES_DIR, 'dsh-experimental-cua-macos.tgz')))
     .toEqual(readFileSync(join(inputs, 'dsh-experimental-cua-macos.tgz')))
+})
+
+it('copies the opted-in CUA closure from packed inputs', () => {
+  const root = mkdtempSync(join(tmpdir(), 'desktop-cua-packages-'))
+  onTestFinished(() => { rmSync(root, { recursive: true, force: true }) })
+  const inputs = join(root, 'inputs')
+  mkdirSync(inputs)
+  const packages = targetManifests()
+  packages.set('@deepseek-ai/dsh', packed('@deepseek-ai/dsh'))
+  for (const [name, entry] of packages) {
+    const stem = name.replace('@deepseek-ai/', '')
+    const folder = join(root, stem, 'package')
+    mkdirSync(folder, { recursive: true })
+    writeFileSync(join(folder, 'package.json'), JSON.stringify(entry.manifest))
+    if (name === '@deepseek-ai/dsh-desktop-host') {
+      for (const file of DESKTOP_HOST_RUNTIME_FILES) {
+        mkdirSync(join(folder, file, '..'), { recursive: true })
+        writeFileSync(join(folder, file), '')
+      }
+    }
+    execFileSync('tar', ['-czf', join(inputs, `${stem}.tgz`), '-C', join(folder, '..'), 'package'])
+  }
+  const output = join(root, 'output')
+  const target = { platform: 'darwin', arch: 'arm64' } as const
+  prepareDesktopPackageSet([inputs], output, target)
+  expect(readdirSync(join(output, DESKTOP_PACKAGES_DIR))).not.toContain('dsh-cua-bundle.tgz')
+  prepareDesktopPackageSet([inputs], output, target, { includeCua: true, unsigned: true })
+  expect(readdirSync(join(output, DESKTOP_PACKAGES_DIR))).toContain('dsh-cua-bundle.tgz')
+  expect(readdirSync(join(output, DESKTOP_PACKAGES_DIR))).toContain('dsh-experimental-cua-macos.tgz')
+  const invoke = (overrides: NodeJS.ProcessEnv) => execFileSync(process.execPath, [
+    join(import.meta.dirname, '../scripts/prepare-package-set.ts'), '--from', inputs, '--out', output,
+  ], { env: { ...process.env, DSH_DESKTOP_TARGET_PLATFORM: 'darwin', DSH_DESKTOP_TARGET_ARCH: 'arm64', ...overrides }, stdio: 'pipe' })
+  expect(() => invoke({ DSH_DESKTOP_INCLUDE_CUA: '0', DSH_DESKTOP_UNSIGNED: '1' })).toThrow()
+  invoke({ DSH_DESKTOP_INCLUDE_CUA: '1', DSH_DESKTOP_UNSIGNED: '1' })
+  expect(readdirSync(join(output, DESKTOP_PACKAGES_DIR))).toContain('dsh-cua-bundle.tgz')
+  expect(() => invoke({ DSH_DESKTOP_INCLUDE_CUA: '1', DSH_DESKTOP_UNSIGNED: '0' })).toThrow()
+  expect(() => invoke({ DSH_DESKTOP_INCLUDE_CUA: '1', DSH_DESKTOP_UNSIGNED: '1', DSH_DESKTOP_TARGET_ARCH: 'x64' })).toThrow()
+  expect(() => invoke({ DSH_DESKTOP_INCLUDE_CUA: 'yes', DSH_DESKTOP_UNSIGNED: '1' })).toThrow()
 })

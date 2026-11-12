@@ -15,6 +15,11 @@ on:
         description: '完整版本号，必须形如 0.2.2-alpha.2.local.1.7'
         type: string
         required: true
+      include_cua:
+        description: '在 unsigned mac-arm64 产物中包含 CUA 和 helper（不会激活插件）'
+        type: boolean
+        default: false
+        required: true
       test_command:
         description: '可选测试命令，留空只构建'
         type: string
@@ -107,7 +112,10 @@ jobs:
           '
 
       - name: Package unsigned desktop app
+        env:
+          DSH_DESKTOP_INCLUDE_CUA: ${{ inputs.include_cua && '1' || '' }}
         run: |
+          if [ -z "$DSH_DESKTOP_INCLUDE_CUA" ]; then unset DSH_DESKTOP_INCLUDE_CUA; fi
           pnpm run package:desktop:mac:arm64:unsigned -- --dir --build-version "${{ steps.version.outputs.version }}"
 
       - name: Verify artifact
@@ -140,6 +148,7 @@ jobs:
             "sourceRef": "${{ inputs.source_ref }}",
             "commit": "${{ steps.facts.outputs.commit }}",
             "dirty": ${{ steps.facts.outputs.dirty }},
+            "includeCua": ${{ inputs.include_cua }},
             "version": "${{ steps.version.outputs.version }}",
             "archive": "${{ steps.archive.outputs.name }}",
             "runner": "macos-15"

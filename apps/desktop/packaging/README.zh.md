@@ -170,6 +170,8 @@ pnpm run package:desktop:mac:arm64:unsigned
 pnpm run package:desktop:mac:x64:unsigned
 ```
 
+设置 `DSH_DESKTOP_INCLUDE_CUA=1` 可在未签名的 macOS arm64 构建中加入实验性 Computer Use bundle 及其 ad-hoc 签名 helper；默认不包含。构建使用仓库中的 Swift 源码，并将 helper 纳入受校验的软件包集合。CI 应随源码提交记录所用 Xcode 和 Swift 版本；这些检查不代表逐字节可复现或运行功能已验证。构建不会自动启用 profile 中的 bundle。若 profile 选择了同名 bundle，Desktop 运行时的 bundle 会优先于 profile 本地旧包；迁移前应单独检查 profile 及其覆盖层。profile 单独安装的 CUA 组件仍可能优先于运行时副本：安装验收时须核查各角色解析路径与版本，并取得授权后才通过插件管理器移除旧候选。构建不会删除 profile 软件包或修改 preset 覆盖层。
+
 添加 `--check` 仅验证本地配置和工具而不构建，或添加 `--dir` 只生成解包应用。DMG 路径为 `apps/desktop/.desktop-build/targets/<target>/unsigned-artifacts/deepseek-harness-<version>-mac-<arch>-unsigned.dmg`。所有检查通过后，命令打印 `DMG:` 及其绝对路径。打开后将应用复制到本地测试目录。
 
 这些命令忽略 `.env.macos` 和继承的发布配置，使用 `com.deepseek.harness` 作为应用 ID，并省略自动更新和强制更新配置。构建工具、标准网络代理与 `DSH_DESKTOP_NPM_REGISTRY` 仍可从 shell 提供。它们跳过 Developer ID 签名、Apple 公证、临时签名钥匙串和公证代理修改。Electron 使用无需证书的本地 ad-hoc 签名，以便修改后的可执行文件能够运行；DMG 不签名。准备阶段和组装后的应用仍执行运行时完整性与冒烟检查。本地构建不生成更新源、ZIP 或发布完成记录，上传命令无法发布这些产物。macOS 可能要求在“系统设置 → 隐私与安全性”中批准打开未经公证的应用。

@@ -29,6 +29,7 @@ import { desktopTargetPlatform, resolveDesktopBuildTarget, resolveDesktopTargetB
 
 const DSH_PACKAGE = '@deepseek-ai/dsh'
 const ROOT_PACKAGES = [DSH_PACKAGE, DESKTOP_HOST_PACKAGE] as const
+const CUA_BUNDLE = '@deepseek-ai/dsh-cua-bundle'
 const APP_ROOT = resolve(import.meta.dirname, '..')
 const REPOSITORY_ROOT = resolve(APP_ROOT, '..', '..')
 
@@ -62,28 +63,39 @@ function dependencyNames(manifest: Readonly<Record<string, unknown>>, section: s
 }
 
 /**
- * Select workspace dependencies rooted at dsh and its private Host; npm resolves external packages.
- * Reads the repository workspace manifest and package manifests to distinguish required local packages from npm-resolved externals.
+ * Select workspace dependencies rooted at dsh, its private Host and optionally CUA; npm resolves external packages.
+ * The CUA closure requires all target-compatible optional workspace packages as well as required dependencies.
  * @param available - Packed packages indexed by package name.
  * @param target - Platform and architecture of the installer payload.
+ * @param options - Explicit CUA opt-in and unsigned packaging mode.
  * @returns Selected packages sorted by name.
  */
 export function selectDesktopPackageClosure(
   available: ReadonlyMap<string, PackedDesktopPackage>,
   target: ReturnType<typeof desktopTargetPlatform>,
+  options: { includeCua?: boolean; unsigned?: boolean } = {},
 ): PackedDesktopPackage[] {
+  if (options.includeCua && (target.platform !== 'darwin' || target.arch !== 'arm64' || options.unsigned !== true)) {
+    throw new Error('desktop package set: CUA requires unsigned mac-arm64')
+  }
   const workspace = yaml.load(readFileSync(join(REPOSITORY_ROOT, 'pnpm-workspace.yaml'), 'utf8')) as { packages: string[] }
-  const workspaceNames = new Set(globSync(workspace.packages.map(pattern => `${pattern}/package.json`), { cwd: REPOSITORY_ROOT })
-    .map(path => (JSON.parse(readFileSync(join(REPOSITORY_ROOT, path), 'utf8')) as { name: string }).name))
+  const workspaceManifests = new Map(globSync(workspace.packages.map(pattern => `${pattern}/package.json`), { cwd: REPOSITORY_ROOT })
+    .map((path) => {
+      const manifest = JSON.parse(readFileSync(join(REPOSITORY_ROOT, path), 'utf8')) as Record<string, unknown> & { name: string }
+      return [manifest.name, manifest] as const
+    }))
+  const workspaceNames = new Set(workspaceManifests.keys())
   const selected = new Map<string, PackedDesktopPackage>()
-  const visit = (name: string): void => {
-    if (selected.has(name)) return
+  const strictVisited = new Set<string>()
+  const visit = (name: string, strict = false): void => {
+    if (strict ? strictVisited.has(name) : selected.has(name)) return
+    if (strict) strictVisited.add(name)
     const packed = available.get(name)
     if (packed === undefined) throw new Error(`desktop package set: packed inputs omit required package ${name}`)
     selected.set(name, packed)
     for (const section of REQUIRED_DEPENDENCY_SECTIONS) {
       for (const dependency of dependencyNames(packed.manifest, section)) {
-        if (available.has(dependency)) visit(dependency)
+        if (available.has(dependency)) visit(dependency, strict)
         else if (workspaceNames.has(dependency)) {
           throw new Error(`desktop package set: ${name} requires unpacked package ${dependency}`)
         }
@@ -92,13 +104,21 @@ export function selectDesktopPackageClosure(
     for (const dependency of dependencyNames(packed.manifest, OPTIONAL_DEPENDENCY_SECTION)) {
       const optional = available.get(dependency)
       if (optional && supportsTarget(optional.manifest, 'os', target.platform)
-        && supportsTarget(optional.manifest, 'cpu', target.arch)) visit(dependency)
+        && supportsTarget(optional.manifest, 'cpu', target.arch)) visit(dependency, strict)
+      else if (strict && !optional && workspaceNames.has(dependency)) {
+        const workspaceManifest = workspaceManifests.get(dependency)
+        if (workspaceManifest && supportsTarget(workspaceManifest, 'os', target.platform)
+          && supportsTarget(workspaceManifest, 'cpu', target.arch)) {
+          throw new Error(`desktop package set: ${name} requires unpacked package ${dependency}`)
+        }
+      }
     }
   }
   for (const name of ROOT_PACKAGES) {
     if (!available.has(name)) throw new Error(`desktop package set: packed inputs omit ${name}`)
     visit(name)
   }
+  if (options.includeCua) visit(CUA_BUNDLE, true)
   return [...selected.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([, packed]) => packed)
 }
 
@@ -147,11 +167,13 @@ export function assertDesktopHostPackageFiles(files: readonly string[]): void {
  * @param inputs - Release tarball directories.
  * @param output - Destination package-set directory.
  * @param target - Platform and architecture of the installer payload.
+ * @param options - Explicit CUA opt-in and unsigned packaging mode.
  */
 export function prepareDesktopPackageSet(
   inputs: readonly string[], output: string, target: ReturnType<typeof desktopTargetPlatform>,
+  options: { includeCua?: boolean; unsigned?: boolean } = {},
 ): void {
-  const selected = selectDesktopPackageClosure(packedPackages(inputs), target)
+  const selected = selectDesktopPackageClosure(packedPackages(inputs), target, options)
   const host = selected.find(packed => packed.manifest.name === DESKTOP_HOST_PACKAGE)
   if (host === undefined) throw new Error(`desktop package set: selected closure omits ${DESKTOP_HOST_PACKAGE}`)
   assertDesktopHostPackageFiles(tarballFiles(host.tarball))
@@ -193,7 +215,13 @@ function main(): void {
   })
   const inputs = (values.from ?? defaultInputs).map(path => resolve(REPOSITORY_ROOT, path))
   const output = values.out === undefined ? buildPaths.packageSet : resolve(REPOSITORY_ROOT, values.out)
-  prepareDesktopPackageSet(inputs, output, desktopTargetPlatform(resolveDesktopBuildTarget()))
+  const includeCua = process.env.DSH_DESKTOP_INCLUDE_CUA
+  if (includeCua !== undefined && includeCua !== '1') {
+    throw new Error('desktop package set: DSH_DESKTOP_INCLUDE_CUA must be 1 when set')
+  }
+  prepareDesktopPackageSet(inputs, output, desktopTargetPlatform(resolveDesktopBuildTarget()), {
+    includeCua: includeCua === '1', unsigned: process.env.DSH_DESKTOP_UNSIGNED === '1',
+  })
   console.log(`desktop package set: prepared ${output}`)
 }
 

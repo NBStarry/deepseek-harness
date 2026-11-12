@@ -193,6 +193,20 @@ export function resolveDesktopPackageTarget(
   return target
 }
 
+/**
+ * Validate the optional CUA payload before any packaging work starts.
+ * @param value - Raw opt-in environment value.
+ * @param target - Selected Desktop target.
+ * @param unsigned - Whether the Desktop artifact is unsigned.
+ * @returns Whether the CUA payload is requested.
+ */
+export function validateDesktopCuaOption(value: string | undefined, target: DesktopPackageTarget, unsigned: boolean): boolean {
+  if (value === undefined) return false
+  if (value !== '1') throw new Error('desktop package: DSH_DESKTOP_INCLUDE_CUA must be 1 when set')
+  if (!unsigned || target.name !== 'mac-arm64') throw new Error('desktop package: CUA requires unsigned mac-arm64')
+  return true
+}
+
 interface DesktopPackageInvocation {
   readonly target: DesktopPackageTarget
   readonly directory: boolean
@@ -341,6 +355,7 @@ async function resolveRequestedBuildVersion(
 async function main(): Promise<void> {
   const invocation = parseDesktopPackageInvocation(process.argv.slice(2))
   const { target } = invocation
+  validateDesktopCuaOption(process.env.DSH_DESKTOP_INCLUDE_CUA, target, invocation.unsigned)
   if (invocation.skipNotarization) {
     process.stdout.write('desktop package: skipping notarization and stapling; internal debugging only, not qualified for distribution or update publishing\n')
   }
@@ -420,6 +435,7 @@ export async function packageTarget(
   run: ReturnType<typeof createPackagingRun> | undefined,
 ): Promise<void> {
   const { target } = invocation
+  validateDesktopCuaOption(environment.DSH_DESKTOP_INCLUDE_CUA, target, invocation.unsigned)
   const execute = (args: readonly string[], env: NodeJS.ProcessEnv, cwd: string = APP_ROOT) => runPnpm(args, env, cwd, run)
   const journal = target.platform === 'darwin' ? process.env.DSH_DESKTOP_PACKAGING_RUN_DIR : undefined
   const proxyEvent = (status: string) => { if (journal) recordPackagingEvent(journal, { type: 'notarization-proxy', status }) }
@@ -491,7 +507,7 @@ export async function packageTarget(
         ? ['exec', 'tsx', 'apps/desktop/scripts/pack-local-packages.ts']
         : ['run', 'release:pack', '--family', 'dsh']),
       '--out', buildPaths.packedDsh, ...packArguments,
-    ], buildEnv, REPOSITORY_ROOT)
+    ], buildEnv.DSH_DESKTOP_INCLUDE_CUA === '1' ? targetEnv : buildEnv, REPOSITORY_ROOT)
     await executePreparation([
       '--dir',
       'apps/desktop-host',
