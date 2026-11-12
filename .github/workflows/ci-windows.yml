@@ -29,6 +29,13 @@ jobs:
   # the hosted runner.
   # Blacksmith uses 2 vCPU for file-serial native tests and 16 for coverage
   # and the shared build/observational workspace.
+  # The enterprise pools are provisioned for the internal upstream repository
+  # named below, which is the repository this workflow's own predicates and
+  # runner groups cover. Every other repository (a fork, or the public source
+  # mirror) resolves the default branch of each expression to the GitHub-hosted
+  # Windows image instead, so no required lane waits for a label its repository
+  # will never have. The failover values stay available as an explicit opt-in
+  # for whichever repository sets the variable.
   windows-build:
     if: github.event_name == 'pull_request'
     runs-on: >-
@@ -36,7 +43,7 @@ jobs:
           || vars.DSH_CI_FAILOVER_WINDOWS == 'selfhosted'
           && github.event.pull_request.user.login != 'dependabot[bot]'
           && fromJSON('["self-hosted", "dsh-win-ci", "windows"]')
-          || 'dsh-windows-2025-16core' }}
+          || (github.repository == 'deepseek-harness/deepseek-harness' && 'dsh-windows-2025-16core' || 'windows-2025') }}
     name: windows node 24 / build & observational
     timeout-minutes: 60
     env:
@@ -119,7 +126,7 @@ jobs:
           || vars.DSH_CI_FAILOVER_WINDOWS == 'selfhosted'
           && github.event.pull_request.user.login != 'dependabot[bot]'
           && fromJSON('["self-hosted", "dsh-win-ci", "windows"]')
-          || 'dsh-windows-2025-16core' }}
+          || (github.repository == 'deepseek-harness/deepseek-harness' && 'dsh-windows-2025-16core' || 'windows-2025') }}
     name: windows node 24 / coverage
     timeout-minutes: 120
     env:
@@ -197,7 +204,7 @@ jobs:
           || vars.DSH_CI_FAILOVER_WINDOWS == 'selfhosted'
           && github.event.pull_request.user.login != 'dependabot[bot]'
           && fromJSON('["self-hosted", "dsh-win-ci", "windows"]')
-          || 'dsh-windows-2025-16core' }}
+          || (github.repository == 'deepseek-harness/deepseek-harness' && 'dsh-windows-2025-16core' || 'windows-2025') }}
     name: windows node 24 / native tests
     timeout-minutes: 60
     steps:
