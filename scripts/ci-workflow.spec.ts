@@ -1518,6 +1518,7 @@ describe('Issue lifecycle workflow', () => {
 
     expect(lifecycle.on).toHaveProperty('pull_request')
     expect(lifecycle.on).toHaveProperty('pull_request_review')
+    expect(lifecycleJob.if).toContain("github.repository == 'deepseek-harness/deepseek-harness'")
     expect(lifecycleJob.if).toContain("github.event.review.state == 'changes_requested'")
     expect(lifecycleJob.if).toContain('github.event.changes.body != null')
     // Keep the subscription-type gates: issue-lifecycle does not re-subscribe
@@ -1565,7 +1566,7 @@ describe('Issue lifecycle workflow', () => {
 
     expect(tokenStep).toMatchObject({
       id: 'app-token',
-      if: "${{ steps.preflight.outputs.needs-project == 'true' }}",
+      if: "${{ steps.preflight.outputs.needs-project == 'true' && github.repository == 'deepseek-harness/deepseek-harness' }}",
       uses: 'actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1',
       with: {
         'client-id': '${{ vars.DSH_ISSUE_APP_CLIENT_ID }}',

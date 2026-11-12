@@ -34,14 +34,14 @@ description: "面向仓库维护者的 Issue 策略强制范围、Project 访问
 - 解决型引用使用关闭关键词，如 `Fixes #123`、`Closes #123` 或 `Resolves #123`。校验期间只有解析为实际 Issue 的解决型引用需要读取 Project。PR Priority 必须匹配被解决 Issue 中的最高 Priority；带 Priority 标签的解决型 PR 要求每个被解决 Issue 均有 Priority。若所有被解决 Issue 的 Priority 均为空，PR 可以省略 Priority。
 - HTML 注释、代码围栏或行内代码中的引用不计入。跨仓库引用与指向 PR 的引用不能满足 Issue 引用要求。
 
-REST 读取使用仓库 `GITHUB_TOKEN`。Project 校验使用独立的 App token，具有 Issues 和组织 Projects 读取权限。缺少所需 Project 访问权限或字段配置无效时，校验失败，而不是绕过解决型 Issue 的 Priority 检查。
+REST 读取使用仓库 `GITHUB_TOKEN` 与事件仓库：个人 fork 中的 PR 校验收它自己的 Issue 与标签。配置的 Project 及其 App token 属于上游仓库，因此 fork 跳过 Project 读取，并对解决型引用报错并提示改用信息型 `Refs #N`；同仓 Issue 引用与标签规则仍然强制。Project 校验使用独立的 App token，具有 Issues 和组织 Projects 读取权限。缺少所需 Project 访问权限或字段配置无效时，校验失败，而不是绕过解决型 Issue 的 Priority 检查。
 
 -----
 
 <a id="lifecycle-events"></a>
 ## 生命周期事件
 
-[Issue lifecycle](../workflows/issue-lifecycle.yml)独立于 PR 校验强制范围修改 Project 数据。PR 打开、重新打开和正文编辑可将解决型 Issue 推进至 `In progress`；仅编辑标题不会。请求评审以 `In review` 为目标。请求修改的评审以 `In progress` 为目标，并遵守[人工状态归属与终态保护](../../.agents/notes/implemented/process/2026-08-10-event-directed-pr-review-status.zh.md)。
+[Issue lifecycle](../workflows/issue-lifecycle.yml)独立于 PR 校验强制范围修改 Project 数据，且只在上游仓库运行；个人 fork 不执行生命周期工作，也不请求上游 App 凭据。PR 打开、重新打开和正文编辑可将解决型 Issue 推进至 `In progress`；仅编辑标题不会。请求评审以 `In review` 为目标。请求修改的评审以 `In progress` 为目标，并遵守[人工状态归属与终态保护](../../.agents/notes/implemented/process/2026-08-10-event-directed-pr-review-status.zh.md)。
 
 仅批准或仅评论的评审不分配生命周期 runner。PR 推送与标签变更，以及 Issue 指派变更，不触发生命周期工作。其他已订阅的 Issue 事件维护 Project 归属、状态及审计评论；精确订阅列表由工作流定义。
 

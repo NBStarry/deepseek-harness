@@ -866,7 +866,7 @@ test('rejects multiple, unknown, legacy, and Issue-source PR labels', () => {
 })
 
 const mockPolicyApi = (t, { pull = {}, requested = true, reviews = [], issues = {}, priority = 'P1', projectError = false } = {}) => {
-  const environment = ['GH_TOKEN', 'GITHUB_TOKEN', 'PROJECT_TOKEN', 'GITHUB_API_URL', 'GITHUB_OUTPUT']
+  const environment = ['GH_TOKEN', 'GITHUB_TOKEN', 'PROJECT_TOKEN', 'GITHUB_API_URL', 'GITHUB_OUTPUT', 'GITHUB_REPOSITORY']
   const previous = new Map(environment.map((key) => [key, process.env[key]]))
   const directory = mkdtempSync(join(tmpdir(), 'dsh-policy-'))
   t.after(() => {
@@ -1006,7 +1006,7 @@ test('keeps trusted preflight before token minting and required policy unconditi
   assert.ok(steps[1].includes('node .github/issue-management/policy.mjs pr-preflight'))
   assert.ok(steps[1].includes('if [ -f .github/issue-management/selective-preflight.json ]; then'))
   assert.doesNotMatch(steps[1], /secrets\.|PROJECT_TOKEN|if:/)
-  assert.ok(steps[2].includes("if: ${{ steps.preflight.outputs.needs-project == 'true' }}"))
+  assert.ok(steps[2].includes("if: ${{ steps.preflight.outputs.needs-project == 'true' && github.repository == 'deepseek-harness/deepseek-harness' }}"))
   assert.ok(steps[2].includes('permission-organization-projects: read'))
   assert.ok(steps[3].includes('PROJECT_TOKEN: ${{ steps.app-token.outputs.token }}'))
   assert.ok(steps[3].includes('run: node .github/issue-management/policy.mjs pr'))
@@ -1134,6 +1134,72 @@ test('reads policy snapshots in reference order and only resolving Project prior
     '/graphql',
   ])
   assert.deepEqual(fixture.output, [])
+})
+
+test('reads fork PR and Issue REST from the event repository while Project stays upstream', async (t) => {
+  const fixture = mockPolicyApi(t, { pull: { body: 'Refs #2' }, issues: { 2: {} } })
+  process.env.GITHUB_REPOSITORY = 'NBStarry/deepseek-harness'
+  await pullRequestSnapshot(10)
+  const fork = '/repos/NBStarry/deepseek-harness'
+  assert.deepEqual(fixture.requests, [
+    fork + '/pulls/10',
+    fork + '/pulls/10/requested_reviewers',
+    fork + '/pulls/10/reviews?per_page=100',
+    fork + '/issues/2',
+  ])
+  assert.ok(!fixture.requests.includes('/graphql'), 'a fork keeps Project reads out of the snapshot')
+})
+
+test('rejects resolving references on a fork without reading the upstream Project', async (t) => {
+  const fixture = mockPolicyApi(t, { pull: { body: 'Fixes #2' }, issues: { 2: {} } })
+  process.env.GITHUB_REPOSITORY = 'NBStarry/deepseek-harness'
+  const preflight = await runPullRequestPreflight({ pull_request: { number: 10 } })
+  assert.deepEqual(preflight, { eligible: true, needsProject: false })
+  assert.match(fixture.workflowOutput(), /needs-project=false/u)
+  await assert.rejects(runPullRequestCheck({ pull_request: { number: 10 } }), /个人 fork 不读取上游 Project/u)
+  assert.ok(!fixture.requests.includes('/graphql'), 'no upstream Project request is attempted')
+})
+
+test('keeps configured upstream repository semantics when the event is upstream', async (t) => {
+  const fixture = mockPolicyApi(t, { pull: { body: 'Fixes #2' }, issues: { 2: {} } })
+  process.env.GITHUB_REPOSITORY = 'deepseek-harness/deepseek-harness'
+  const snapshot = await pullRequestSnapshot(10)
+  assert.equal(snapshot.issues.get(2).priority, 'P1')
+  const upstream = '/repos/deepseek-harness/deepseek-harness'
+  assert.deepEqual(fixture.requests, [
+    upstream + '/pulls/10',
+    upstream + '/pulls/10/requested_reviewers',
+    upstream + '/pulls/10/reviews?per_page=100',
+    upstream + '/issues/2',
+    '/graphql',
+  ])
+})
+
+test('reads a fork Issue from the event repository while Project variables stay upstream', async (t) => {
+  const previousToken = process.env.GH_TOKEN
+  process.env.GH_TOKEN = 'test-token'
+  process.env.GITHUB_REPOSITORY = 'NBStarry/deepseek-harness'
+  t.after(() => {
+    if (previousToken === undefined) delete process.env.GH_TOKEN
+    else process.env.GH_TOKEN = previousToken
+  })
+  const requests = []
+  let graphqlVariables
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    requests.push({ path: new URL(url).pathname, body: options.body })
+    if (url.endsWith('/graphql')) {
+      graphqlVariables = JSON.parse(options.body).variables
+      return Response.json({ data: projectGraphqlData() })
+    }
+    return Response.json({
+      node_id: 'issue-id', labels: [{ name: 'area/web' }, { name: 'kind/bug-fix' }],
+      type: { name: 'Bug' }, state: 'open', state_reason: null,
+    })
+  })
+  await issueSnapshot(2)
+  assert.equal(requests[0].path, '/repos/NBStarry/deepseek-harness/issues/2')
+  assert.equal(graphqlVariables.organization, 'deepseek-harness')
+  assert.equal(graphqlVariables.repository, 'deepseek-harness')
 })
 
 test('reads lifecycle references for draft Bot PRs without review or Project requests', async (t) => {
