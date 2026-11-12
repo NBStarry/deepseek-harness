@@ -6,6 +6,19 @@ import config from './config.json' with { type: 'json' }
 
 const API_VERSION = '2026-03-10'
 
+/**
+ * Repository the workflow event belongs to: fork PRs read their own PR and Issues.
+ *
+ * GitHub sets `GITHUB_REPOSITORY` in every workflow step. The configured repository in
+ * `config.json` names the upstream Project owner and is never used for PR or Issue REST reads.
+ * @returns {string} `owner/repository` for event-scoped REST reads.
+ */
+export function repositorySlug() {
+  const value = process.env.GITHUB_REPOSITORY
+  if (typeof value === 'string' && /^[^/]+\/[^/]+$/u.test(value)) return value
+  return `${config.organization}/${config.repository}`
+}
+
 function token() {
   const value = process.env.GH_TOKEN || process.env.GITHUB_TOKEN
   if (!value) throw new Error('GH_TOKEN 或 GITHUB_TOKEN 未设置')
@@ -69,7 +82,7 @@ export async function graphql(query, variables) {
  * @returns {Promise<object|null>} Issue snapshot, or null when the number identifies a pull request.
  */
 export async function issueSnapshot(number, status = undefined) {
-  const issue = await api(`/repos/${config.organization}/${config.repository}/issues/${number}`)
+  const issue = await api(`/repos/${repositorySlug()}/issues/${number}`)
   if (issue.pull_request) return null
   const context = await projectContext(number)
   return {
