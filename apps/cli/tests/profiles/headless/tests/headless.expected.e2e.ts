@@ -54,7 +54,9 @@ const refreshing = process.env.DSH_SNAPSHOT === 'refresh'
 /** The shipped base bundle's title output cap, which marks a title request's `max_tokens`. */
 const TITLE_MAX_TOKENS = 4096
 /** Heartbeat comments the shared defaults mock sends before an ordinary response. */
-const DEFAULTS_HEARTBEATS = 24
+const DEFAULTS_HEARTBEATS = 3
+/** Extended comment budget selected only by the provider-comments case. */
+const EXTENDED_HEARTBEATS = 24
 /** Interval between the shared defaults mock's heartbeat comments. */
 const DEFAULTS_HEARTBEAT_MS = 60
 
@@ -104,7 +106,7 @@ async function expectHeadlessStream(normalized: string, expectedPath: string): P
 
 /** Serve one deterministic DeepSeek-compatible response while retaining its request body. */
 async function deepseekDefaultsServer(
-  options: { waitForTitleRequest?: boolean; piAiCompatibility?: true } = {},
+  options: { waitForTitleRequest?: boolean; piAiCompatibility?: true; heartbeats?: number } = {},
 ): Promise<DeepSeekDefaultsServer> {
   const requests: JsonObject[] = []
   const paths: string[] = []
@@ -118,10 +120,11 @@ async function deepseekDefaultsServer(
       paths.push(request.url ?? '')
       requestedAt.push(Date.now())
       response.writeHead(200, { 'content-type': 'text/event-stream' })
-      // The ordinary window is ~1.4 s of comments and a ~1.5 s response: the
-      // 60 ms interval stays below the 1000 ms idle window with real scheduling
-      // margin, while the compatibility case can still prove it extends the end.
-      let keepAlives = DEFAULTS_HEARTBEATS
+      // The provider-comments case opts into the extended budget: 24 comments at
+      // 60 ms keep the stream active for ~1.4 s before the ~1.5 s response, leaving
+      // margin above its 1000 ms idle window. Other callers keep the ordinary
+      // three-comment/240 ms response expected by their own configurations.
+      let keepAlives = options.heartbeats ?? DEFAULTS_HEARTBEATS
       const write = (): void => {
         // One-shot teardown may cancel background title work after the main response.
         if (keepAlives-- > 0
@@ -849,7 +852,7 @@ describe('headless stream-json snapshots', () => {
   }, LOADER_SMOKE_TEST_TIMEOUT_MS)
 
   it('keeps provider comments alive and sends DeepSeek defaults through the one-shot app', async () => {
-    const server = await deepseekDefaultsServer()
+    const server = await deepseekDefaultsServer({ heartbeats: EXTENDED_HEARTBEATS })
     try {
       const result = await runLoaderSmoke({
         label: 'DeepSeek adapter defaults headless stream-json snapshot',
@@ -959,8 +962,8 @@ describe('headless stream-json snapshots', () => {
       try {
         const decoder = new TextDecoder()
         let body = ''
-        // Cross the ordinary heartbeat window before the title request; the
-        // fixture must keep commenting past its normal 24-comment end.
+        // Cross the ordinary three-comment window before the title request;
+        // the fixture must keep commenting past its normal end.
         while (body.split(': keep-alive\n\n').length < DEFAULTS_HEARTBEATS + 2) {
           const chunk = await reader.read()
           expect(chunk.done).toBe(false)
