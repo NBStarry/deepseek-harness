@@ -1,0 +1,214 @@
+name: terminal-io control (diag)
+
+# Diagnostic carrier only: this workflow runs for a push to this exact diagnostic
+# branch and checks out the fixed measured commit. It is not a PR or master
+# workflow, and it publishes nothing outside its own run artifacts.
+on:
+  push:
+    branches: [diag/terminal-io-control]
+
+permissions:
+  contents: read
+
+jobs:
+  terminal-io-control:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      DSH_TELEMETRY_DISABLED: '1'
+      MEASURED_COMMIT: cf1fc0fe55090e77dabe0094b7bd8088b05b0801
+    steps:
+      - name: Check out fixed measured commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.MEASURED_COMMIT }}
+          persist-credentials: false
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v5.0.0
+        with:
+          dest: ${{ runner.temp }}/setup-pnpm-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install (immutable)
+        run: pnpm install --frozen-lockfile
+
+      - name: Record baseline resources
+        run: |
+          {
+            date -u +%FT%TZ
+            uname -a
+            nproc
+            lscpu | grep -E 'Model name|CPU\(s\)|Thread|Core|MHz' || true
+            cat /sys/fs/cgroup/cpu.max || true
+            cat /proc/loadavg
+            node -p "process.version + ' cpus=' + require('node:os').cpus().length"
+          } | tee "$RUNNER_TEMP/resources-before-all.txt"
+
+      # Builds the original CI benchmark artifact set once (native support,
+      # libraries, compiled benchmark workers, Web assets) through the exported
+      # buildCiBenchArtifacts function; it does not run the benchmark suite.
+      - name: Build benchmark artifacts once
+        run: |
+          cat > "$RUNNER_TEMP/build-bench-artifacts.mts" <<'TS'
+          import { pathToFileURL } from 'node:url'
+          const root = process.env.GITHUB_WORKSPACE
+          if (root === undefined) throw new Error('GITHUB_WORKSPACE is required')
+          const { buildCiBenchArtifacts } = await import(pathToFileURL(`${root}/scripts/run-ci-bench.ts`).href)
+          buildCiBenchArtifacts(root)
+          TS
+          pnpm exec tsx "$RUNNER_TEMP/build-bench-artifacts.mts"
+
+      - name: Paired P1 (2 workers, fixed projection-list opponent)
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          resources() {
+            date -u +%FT%TZ
+            uname -a
+            nproc
+            lscpu | grep -E 'Model name|CPU\(s\)|Thread|Core|MHz' || true
+            cat /sys/fs/cgroup/cpu.max || true
+            cat /proc/loadavg
+          }
+          resources > "$RUNNER_TEMP/resources-before-p1.txt"
+          rc=0
+          pnpm exec vitest run --config vitest.bench.config.ts --maxWorkers=2 \
+            benchmarks/terminal-io/terminal-io.bench.ts \
+            benchmarks/session-corpus/projection-list.bench.ts \
+            2>&1 | tee "$RUNNER_TEMP/p1.log" || rc=$?
+          echo "$rc" > "$RUNNER_TEMP/p1.exit"
+          resources > "$RUNNER_TEMP/resources-after-p1.txt"
+          exit "$rc"
+
+      - name: Isolated I1 (single worker)
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          resources() {
+            date -u +%FT%TZ
+            uname -a
+            nproc
+            lscpu | grep -E 'Model name|CPU\(s\)|Thread|Core|MHz' || true
+            cat /sys/fs/cgroup/cpu.max || true
+            cat /proc/loadavg
+          }
+          resources > "$RUNNER_TEMP/resources-before-i1.txt"
+          rc=0
+          pnpm exec vitest run --config vitest.bench.config.ts --no-file-parallelism --maxWorkers=1 \
+            benchmarks/terminal-io/terminal-io.bench.ts \
+            2>&1 | tee "$RUNNER_TEMP/i1.log" || rc=$?
+          echo "$rc" > "$RUNNER_TEMP/i1.exit"
+          resources > "$RUNNER_TEMP/resources-after-i1.txt"
+          exit "$rc"
+
+      - name: Isolated I2 (single worker)
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          resources() {
+            date -u +%FT%TZ
+            uname -a
+            nproc
+            lscpu | grep -E 'Model name|CPU\(s\)|Thread|Core|MHz' || true
+            cat /sys/fs/cgroup/cpu.max || true
+            cat /proc/loadavg
+          }
+          resources > "$RUNNER_TEMP/resources-before-i2.txt"
+          rc=0
+          pnpm exec vitest run --config vitest.bench.config.ts --no-file-parallelism --maxWorkers=1 \
+            benchmarks/terminal-io/terminal-io.bench.ts \
+            2>&1 | tee "$RUNNER_TEMP/i2.log" || rc=$?
+          echo "$rc" > "$RUNNER_TEMP/i2.exit"
+          resources > "$RUNNER_TEMP/resources-after-i2.txt"
+          exit "$rc"
+
+      - name: Paired P2 (2 workers, fixed projection-list opponent)
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          resources() {
+            date -u +%FT%TZ
+            uname -a
+            nproc
+            lscpu | grep -E 'Model name|CPU\(s\)|Thread|Core|MHz' || true
+            cat /sys/fs/cgroup/cpu.max || true
+            cat /proc/loadavg
+          }
+          resources > "$RUNNER_TEMP/resources-before-p2.txt"
+          rc=0
+          pnpm exec vitest run --config vitest.bench.config.ts --maxWorkers=2 \
+            benchmarks/terminal-io/terminal-io.bench.ts \
+            benchmarks/session-corpus/projection-list.bench.ts \
+            2>&1 | tee "$RUNNER_TEMP/p2.log" || rc=$?
+          echo "$rc" > "$RUNNER_TEMP/p2.exit"
+          resources > "$RUNNER_TEMP/resources-after-p2.txt"
+          exit "$rc"
+
+      - name: Report samples and explicit failures
+        if: always()
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs')
+          const dir = process.env.RUNNER_TEMP
+          const runs = [
+            { key: 'p1', label: 'P1 paired' },
+            { key: 'i1', label: 'I1 isolated' },
+            { key: 'i2', label: 'I2 isolated' },
+            { key: 'p2', label: 'P2 paired' },
+          ]
+          const median = values => [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)]
+          const readReport = key => {
+            const path = `${dir}/${key}.log`
+            if (!fs.existsSync(path)) return null
+            const line = fs.readFileSync(path, 'utf8').split('\n').reverse()
+              .find(candidate => candidate.startsWith('{') && candidate.includes('"scenario":"terminal-steady"'))
+            return line === undefined ? null : JSON.parse(line)
+          }
+          const lines = []
+          const failures = []
+          for (const run of runs) {
+            let exit = 127
+            try { exit = Number(fs.readFileSync(`${dir}/${run.key}.exit`, 'utf8').trim()) } catch {}
+            const report = readReport(run.key)
+            if (report === null) {
+              lines.push(`${run.label} exit=${exit} missing terminal-steady report`)
+              failures.push(`${run.label}:missing-report`)
+              continue
+            }
+            const small = report.small.map(row => row.completeMs)
+            const large = report.large.map(row => row.completeMs)
+            const medianMs = median(large)
+            const exceeded = medianMs > report.completeBudgetMs
+            lines.push(`${run.label} exit=${exit} smallCompleteMs=${JSON.stringify(small)} largeCompleteMs=${JSON.stringify(large)} largeMedianMs=${medianMs} budgetMs=${report.completeBudgetMs} budget_exceeded=${exceeded}`)
+            if (exit !== 0) failures.push(`${run.label}:exit=${exit}`)
+            if (exceeded) failures.push(`${run.label}:budget_exceeded`)
+          }
+          lines.push(`REPORTED_FAILURES=${failures.length === 0 ? 'none' : failures.join(',')}`)
+          fs.writeFileSync(`${dir}/summary.txt`, lines.join('\n') + '\n')
+          console.log(lines.join('\n'))
+          if (failures.length > 0) process.exitCode = 1
+          NODE
+
+      - name: Upload control logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: terminal-io-control
+          path: |
+            ${{ runner.temp }}/p1.log
+            ${{ runner.temp }}/i1.log
+            ${{ runner.temp }}/i2.log
+            ${{ runner.temp }}/p2.log
+            ${{ runner.temp }}/p1.exit
+            ${{ runner.temp }}/i1.exit
+            ${{ runner.temp }}/i2.exit
+            ${{ runner.temp }}/p2.exit
+            ${{ runner.temp }}/summary.txt
+            ${{ runner.temp }}/resources-*.txt
+          if-no-files-found: warn
