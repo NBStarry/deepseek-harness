@@ -53,6 +53,10 @@ const headlessFailureExpected = join(goldensDir, 'headless-profile', 'stderr.exp
 const refreshing = process.env.DSH_SNAPSHOT === 'refresh'
 /** The shipped base bundle's title output cap, which marks a title request's `max_tokens`. */
 const TITLE_MAX_TOKENS = 4096
+/** Heartbeat comments the shared defaults mock sends before an ordinary response. */
+const DEFAULTS_HEARTBEATS = 24
+/** Interval between the shared defaults mock's heartbeat comments. */
+const DEFAULTS_HEARTBEAT_MS = 60
 
 interface JsonObject {
   [key: string]: unknown
@@ -114,13 +118,16 @@ async function deepseekDefaultsServer(
       paths.push(request.url ?? '')
       requestedAt.push(Date.now())
       response.writeHead(200, { 'content-type': 'text/event-stream' })
-      let keepAlives = 3
+      // The ordinary window is ~1.4 s of comments and a ~1.5 s response: the
+      // 60 ms interval stays below the 1000 ms idle window with real scheduling
+      // margin, while the compatibility case can still prove it extends the end.
+      let keepAlives = DEFAULTS_HEARTBEATS
       const write = (): void => {
         // One-shot teardown may cancel background title work after the main response.
         if (keepAlives-- > 0
           || (options.waitForTitleRequest === true && !requests.some(isTitleRequest))) {
           response.write(': keep-alive\n\n')
-          timer = setTimeout(write, 60)
+          timer = setTimeout(write, DEFAULTS_HEARTBEAT_MS)
           return
         }
         if (options.piAiCompatibility !== true) {
@@ -141,7 +148,7 @@ async function deepseekDefaultsServer(
           '',
         ].join('\n\n'))
       }
-      let timer = setTimeout(write, 60)
+      let timer = setTimeout(write, DEFAULTS_HEARTBEAT_MS)
       response.once('close', () => { clearTimeout(timer) })
     })
   })
@@ -952,8 +959,9 @@ describe('headless stream-json snapshots', () => {
       try {
         const decoder = new TextDecoder()
         let body = ''
-        // Four heartbeats cross the ordinary fixture's three-heartbeat response.
-        while (body.split(': keep-alive\n\n').length < 5) {
+        // Cross the ordinary heartbeat window before the title request; the
+        // fixture must keep commenting past its normal 24-comment end.
+        while (body.split(': keep-alive\n\n').length < DEFAULTS_HEARTBEATS + 2) {
           const chunk = await reader.read()
           expect(chunk.done).toBe(false)
           body += decoder.decode(chunk.value)
