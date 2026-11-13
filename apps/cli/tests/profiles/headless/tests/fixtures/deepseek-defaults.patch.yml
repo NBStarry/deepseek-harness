@@ -10,7 +10,7 @@
     baseURL: !!js process.env.DSH_SNAPSHOT_BASE_URL
     thinking: enabled
     reasoningEffort: low
-    streamIdleTimeoutMs: 150
+    streamIdleTimeoutMs: !!js Number(process.env.DSH_HEADLESS_IDLE_MS ?? 150)
 
 - id: agent-loop
   config:

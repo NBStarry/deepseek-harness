@@ -53,6 +53,16 @@ const headlessFailureExpected = join(goldensDir, 'headless-profile', 'stderr.exp
 const refreshing = process.env.DSH_SNAPSHOT === 'refresh'
 /** The shipped base bundle's title output cap, which marks a title request's `max_tokens`. */
 const TITLE_MAX_TOKENS = 4096
+/**
+ * Diagnostic-only keepalive overrides for the Linux control run. Unset variables
+ * reproduce the committed window (60 ms comments, three of them, 150 ms idle).
+ */
+const HEADLESS_CONTROL = {
+  idleMs: Number(process.env.DSH_HEADLESS_IDLE_MS ?? 150),
+  heartbeatMs: Number(process.env.DSH_HEADLESS_HEARTBEAT_MS ?? 60),
+  heartbeats: Number(process.env.DSH_HEADLESS_HEARTBEATS ?? 3),
+  skipFirstAgentHeartbeats: process.env.DSH_HEADLESS_SKIP_FIRST_AGENT_HEARTBEATS === '1',
+} as const
 
 interface JsonObject {
   [key: string]: unknown
@@ -110,17 +120,24 @@ async function deepseekDefaultsServer(
     request.setEncoding('utf8')
     request.on('data', (chunk: string) => { body += chunk })
     request.on('end', () => {
-      requests.push(JSON.parse(body) as JsonObject)
+      const parsed = JSON.parse(body) as JsonObject
+      requests.push(parsed)
       paths.push(request.url ?? '')
       requestedAt.push(Date.now())
+      // Diagnostic negative control: only the first agent request lacks comments,
+      // so the retry (and the title request) keep the stream alive and let the
+      // app exit 0; the original two-request assertion still fails.
+      const firstAgentRequest = !isTitleRequest(parsed)
+        && requests.filter(candidate => !isTitleRequest(candidate)).length === 1
+      const skipComments = HEADLESS_CONTROL.skipFirstAgentHeartbeats && firstAgentRequest
       response.writeHead(200, { 'content-type': 'text/event-stream' })
-      let keepAlives = 3
+      let keepAlives = HEADLESS_CONTROL.heartbeats
       const write = (): void => {
         // One-shot teardown may cancel background title work after the main response.
         if (keepAlives-- > 0
           || (options.waitForTitleRequest === true && !requests.some(isTitleRequest))) {
-          response.write(': keep-alive\n\n')
-          timer = setTimeout(write, 60)
+          if (!skipComments) response.write(': keep-alive\n\n')
+          timer = setTimeout(write, HEADLESS_CONTROL.heartbeatMs)
           return
         }
         if (options.piAiCompatibility !== true) {
@@ -141,7 +158,7 @@ async function deepseekDefaultsServer(
           '',
         ].join('\n\n'))
       }
-      let timer = setTimeout(write, 60)
+      let timer = setTimeout(write, HEADLESS_CONTROL.heartbeatMs)
       response.once('close', () => { clearTimeout(timer) })
     })
   })
@@ -883,6 +900,35 @@ describe('headless stream-json snapshots', () => {
               atMs: started === undefined || at === undefined ? null : at - started,
             }
           }),
+        }))
+        const retry = parseJsonl(result.stdout)
+          .map(record => record.event)
+          .filter((event): event is JsonObject => (
+            event !== null
+            && typeof event === 'object'
+            && !Array.isArray(event)
+            && 'type' in event
+            && (event.type === 'llm/retry' || event.type === 'llm/retry-started')
+          ))
+          .map((event) => {
+            const data = event.data as JsonObject | undefined
+            const failure = data?.failure as JsonObject | undefined
+            return {
+              type: event.type,
+              code: typeof failure?.code === 'string' ? failure.code : null,
+              // Fixed whitelist comparison; the message itself is never emitted.
+              idleTimeout: failure?.message === 'DeepSeek Messages stream idle timeout',
+              mode: typeof data?.mode === 'string' ? data.mode : null,
+              delayMs: typeof data?.delayMs === 'number' ? data.delayMs : null,
+              policyKey: typeof data?.policyKey === 'string' ? data.policyKey : null,
+            }
+          })
+        console.error('HEADLESS_DEFAULTS_RETRY_DIAG', JSON.stringify({
+          idleMs: HEADLESS_CONTROL.idleMs,
+          heartbeatMs: HEADLESS_CONTROL.heartbeatMs,
+          heartbeats: HEADLESS_CONTROL.heartbeats,
+          skipFirstAgentHeartbeats: HEADLESS_CONTROL.skipFirstAgentHeartbeats,
+          retry,
         }))
       }
       expect(server.requests).toHaveLength(2)

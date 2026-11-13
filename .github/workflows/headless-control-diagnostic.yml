@@ -1,0 +1,158 @@
+name: Headless control diagnostic
+
+# Temporary diagnostic carrier for the Linux headless keepalive retry. It runs
+# only when this exact diagnostic branch is pushed; it never opens a PR, releases,
+# or writes to master. Keep the run logs and the branch as evidence; deletion needs
+# separate authorization under the repository worktree rules.
+on:
+  push:
+    branches: [fix/pr4-headless-control]
+
+permissions:
+  contents: read
+
+env:
+  PRIMARY_NODE_VERSION: '24'
+  DSH_TELEMETRY_DISABLED: '1'
+
+jobs:
+  diagnostic:
+    name: headless control diagnostic
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Use runner-owned temporary storage
+        run: |
+          echo "TMPDIR=${{ runner.temp }}" >> "$GITHUB_ENV"
+          echo "NODE_COMPILE_CACHE=${{ runner.temp }}/node-compile-cache" >> "$GITHUB_ENV"
+          echo "PLAYWRIGHT_BROWSERS_PATH=${{ runner.temp }}/ms-playwright" >> "$GITHUB_ENV"
+          echo "LOG_DIR=${{ runner.temp }}/headless-control" >> "$GITHUB_ENV"
+          mkdir -p "${{ runner.temp }}/headless-control"
+
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v5.0.0
+        with:
+          dest: ${{ runner.temp }}/setup-pnpm-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: ${{ env.PRIMARY_NODE_VERSION }}
+
+      - name: Install (immutable) and prepare bubblewrap
+        run: |
+          pnpm install --frozen-lockfile
+          bash scripts/prepare-ci-bubblewrap.sh
+
+      - name: Install Playwright browsers
+        run: pnpm --filter @deepseek-ai/dsh-web-frontend exec playwright install --with-deps chromium webkit
+
+      - name: Build the primary runtime once (original artifact entry)
+        run: CI=true pnpm run prepare:primary-runtime --target linux-x64 --output "$RUNNER_TEMP/office-runtime" --cache "$RUNNER_TEMP/office-runtime-downloads"
+
+      - name: Build artifacts once (original build entry)
+        run: pnpm run build:artifacts
+
+      # Original window and original test:expected lane concurrency. A failure
+      # here is data, not a step failure, so the exit code is always collected.
+      - name: Phase A — original window in the full expected lane
+        id: phase-a
+        env:
+          DSH_EXAMPLE_MODE: lib
+        run: |
+          set +e
+          log="$LOG_DIR/phaseA.log"
+          pnpm run test:expected > "$log" 2>&1
+          rc=$?
+          reproduced=0
+          grep -q 'HEADLESS_DEFAULTS_RETRY_DIAG.*"code":"TIMEOUT".*"idleTimeout":true' "$log" && reproduced=1
+          printf 'phaseA rc=%s reproduced=%s\n' "$rc" "$reproduced" | tee -a "$LOG_DIR/phases.txt"
+          echo "reproduced=$reproduced" >> "$GITHUB_OUTPUT"
+          echo "rc=$rc" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      # Candidate window is only exercised after the original failure class is
+      # visible in this run; an unreproduced run stops after Phase A.
+      - name: Phase B — candidate window focused positive
+        id: phase-b
+        if: steps.phase-a.outputs.reproduced == '1'
+        env:
+          DSH_EXAMPLE_MODE: lib
+        run: |
+          set +e
+          log="$LOG_DIR/phaseB.log"
+          DSH_HEADLESS_IDLE_MS=300 DSH_HEADLESS_HEARTBEAT_MS=60 DSH_HEADLESS_HEARTBEATS=7 \
+            pnpm exec vitest run --config vitest.expected.config.ts \
+              apps/cli/tests/profiles/headless/tests/headless.expected.e2e.ts \
+              -t 'keeps provider comments alive' > "$log" 2>&1
+          rc=$?
+          printf 'phaseB rc=%s\n' "$rc" | tee -a "$LOG_DIR/phases.txt"
+          echo "rc=$rc" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      # The idle watchdog reason (MESSAGES_IDLE) becomes LlmError code TIMEOUT
+      # with message "DeepSeek Messages stream idle timeout" in the retry event.
+      # Negative control: without comments the 300 ms idle window must fire
+      # before the ~480 ms final response, and the original two-request
+      # assertion must fail. Any other failure is not an acceptable result.
+      - name: Phase C — no-heartbeat negative control
+        id: phase-c
+        if: steps.phase-a.outputs.reproduced == '1'
+        env:
+          DSH_EXAMPLE_MODE: lib
+        run: |
+          set +e
+          log="$LOG_DIR/phaseC.log"
+          DSH_HEADLESS_IDLE_MS=300 DSH_HEADLESS_HEARTBEAT_MS=60 DSH_HEADLESS_HEARTBEATS=7 \
+            DSH_HEADLESS_SKIP_FIRST_AGENT_HEARTBEATS=1 \
+            pnpm exec vitest run --config vitest.expected.config.ts \
+              apps/cli/tests/profiles/headless/tests/headless.expected.e2e.ts \
+              -t 'keeps provider comments alive' > "$log" 2>&1
+          rc=$?
+          idle=0
+          count=0
+          loader=0
+          grep -q 'HEADLESS_DEFAULTS_RETRY_DIAG.*"code":"TIMEOUT".*"idleTimeout":true' "$log" && idle=1
+          grep -Eq 'to have a length of 2 but got [3-9]' "$log" && count=1
+          grep -q 'HEADLESS_DEFAULTS_REQUEST_DIAG' "$log" && ! grep -q 'did not exit within' "$log" && loader=1
+          negative_ok=0
+          [ "$rc" -ne 0 ] && [ "$idle" -eq 1 ] && [ "$count" -eq 1 ] && [ "$loader" -eq 1 ] && negative_ok=1
+          printf 'phaseC rc=%s idle=%s count2_assertion_failed=%s loader_result=%s negative_ok=%s\n' "$rc" "$idle" "$count" "$loader" "$negative_ok" | tee -a "$LOG_DIR/phases.txt"
+          echo "negative_ok=$negative_ok" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Verdict
+        if: always()
+        run: |
+          set +e
+          [ -f "$LOG_DIR/phases.txt" ] && cat "$LOG_DIR/phases.txt"
+          a_outcome='${{ steps.phase-a.outcome }}'
+          if [ "$a_outcome" != 'success' ]; then
+            echo "verdict=aborted-before-phase-a-completed (outcome=$a_outcome)" | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          a_rc='${{ steps.phase-a.outputs.rc }}'
+          reproduced='${{ steps.phase-a.outputs.reproduced }}'
+          if [ "$reproduced" != '1' ]; then
+            if [ "$a_rc" = '0' ]; then
+              echo 'verdict=not-reproduced (phase A passed); stopped without candidate window runs' | tee -a "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            echo "verdict=other-failure (phase A rc=$a_rc without the idle retry diagnostic); investigate instead of treating it as not-reproduced" | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          b_rc='${{ steps.phase-b.outputs.rc }}'
+          negative_ok='${{ steps.phase-c.outputs.negative_ok }}'
+          echo "verdict reproduced=1 phaseB_rc=$b_rc negative_ok=$negative_ok" | tee -a "$GITHUB_STEP_SUMMARY"
+          [ "$b_rc" = '0' ] && [ "$negative_ok" = '1' ] && exit 0
+          exit 1
+
+      - name: Save logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: headless-control-logs-${{ github.run_id }}
+          path: ${{ runner.temp }}/headless-control
+          retention-days: 14
