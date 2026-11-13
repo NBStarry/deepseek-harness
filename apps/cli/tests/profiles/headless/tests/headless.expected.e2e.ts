@@ -884,6 +884,29 @@ describe('headless stream-json snapshots', () => {
             }
           }),
         }))
+        const retry = parseJsonl(result.stdout)
+          .map(record => record.event)
+          .filter((event): event is JsonObject => (
+            event !== null
+            && typeof event === 'object'
+            && !Array.isArray(event)
+            && 'type' in event
+            && (event.type === 'llm/retry' || event.type === 'llm/retry-started')
+          ))
+          .map((event) => {
+            const data = event.data as JsonObject | undefined
+            const failure = data?.failure as JsonObject | undefined
+            return {
+              type: event.type,
+              code: typeof failure?.code === 'string' ? failure.code : null,
+              // Fixed whitelist comparison; the message itself is never emitted.
+              idleTimeout: failure?.message === 'DeepSeek Messages stream idle timeout',
+              mode: typeof data?.mode === 'string' ? data.mode : null,
+              delayMs: typeof data?.delayMs === 'number' ? data.delayMs : null,
+              policyKey: typeof data?.policyKey === 'string' ? data.policyKey : null,
+            }
+          })
+        console.error('HEADLESS_DEFAULTS_RETRY_DIAG', JSON.stringify({ retry }))
       }
       expect(server.requests).toHaveLength(2)
       expect(server.paths).toEqual(['/v1/messages', '/v1/messages'])
