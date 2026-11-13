@@ -586,14 +586,15 @@ describe('CI workflow', () => {
       linuxAggregate: aggregate['runs-on'] as string,
       windows: windowsBuild['runs-on'] as string,
     }
-    const evaluate = (expression: string, vars: Record<string, string>, login = 'maintainer'): unknown => {
+    const evaluate = (expression: string, vars: Record<string, string>, login = 'maintainer',
+      repository = 'deepseek-harness/deepseek-harness'): unknown => {
       return evaluateRunsOn(expression, {
         vars,
         fromJSON: JSON.parse,
-        github: { event: { pull_request: { user: { login } } } },
+        github: { repository, event: { pull_request: { user: { login } } } },
       })
     }
-    for (const [name, selector, variable, pool, hosted] of [
+    for (const [name, selector, variable, pool, upstreamDefault] of [
       ['linux gates', selectors.linux, 'DSH_CI_FAILOVER_LINUX', ['self-hosted', 'linux', 'x64', 'vm-backup'], 'dsh-ubuntu-24-04-16core'],
       ['linux aggregate', selectors.linuxAggregate, 'DSH_CI_FAILOVER_LINUX', ['self-hosted', 'linux', 'x64', 'vm-backup'], 'ubuntu-latest'],
       ['windows lanes', selectors.windows, 'DSH_CI_FAILOVER_WINDOWS', ['self-hosted', 'dsh-win-ci', 'windows'], 'dsh-windows-2025-16core'],
@@ -602,10 +603,46 @@ describe('CI workflow', () => {
       expect(evaluate(selector, { [variable]: 'selfhosted' }), `${name} selfhosted value`).toEqual(pool)
       // The blacksmith branch must not capture the selfhosted pool, and the
       // dependabot exclusion applies to the pool, not to the blacksmith tier.
-      expect(evaluate(selector, { [variable]: 'selfhosted' }, 'dependabot[bot]'), `${name} dependabot on selfhosted`).toBe(hosted)
+      expect(evaluate(selector, { [variable]: 'selfhosted' }, 'dependabot[bot]'), `${name} dependabot on selfhosted`).toBe(upstreamDefault)
       for (const mode of ['', 'hosted', 'unexpected']) {
-        expect(evaluate(selector, { [variable]: mode }), `${name} default on ${mode}`).toBe(hosted)
+        expect(evaluate(selector, { [variable]: mode }), `${name} default on ${mode}`).toBe(upstreamDefault)
       }
+    }
+
+    // The enterprise pools are provisioned only for the internal upstream
+    // repository that this tree's own release predicates already name
+    // (`deepseek-harness/deepseek-harness`). Any other repository — a fork, or
+    // the public source mirror — resolves the same required selectors to
+    // GitHub-hosted runners, or every gate queues forever on a label that
+    // repository cannot have. The aggregate stays on its hosted verdict image.
+    for (const repository of ['NBStarry/deepseek-harness', 'deepseek-ai/deepseek-harness']) {
+      for (const [name, selector, hosted] of [
+        ['linux gates', selectors.linux, 'ubuntu-24.04'],
+        ['linux aggregate', selectors.linuxAggregate, 'ubuntu-latest'],
+        ['windows lanes', selectors.windows, 'windows-2025'],
+      ] as const) {
+        expect(evaluate(selector, {}, 'maintainer', repository), `${name} default outside upstream`).toBe(hosted)
+      }
+    }
+
+    // Every selector that names an enterprise pool must keep the
+    // upstream-repository branch, so a new required job cannot silently
+    // reintroduce fork-wide indefinite queueing.
+    for (const [file, enterprise, hosted] of [
+      ['.github/workflows/ci.yml', 'dsh-ubuntu-24-04-16core', 'ubuntu-24.04'],
+      ['.github/workflows/ci-windows.yml', 'dsh-windows-2025-16core', 'windows-2025'],
+    ] as const) {
+      const jobs = loadWorkflow(file).jobs
+      if (!isRecord(jobs)) throw new TypeError(`${file} must define jobs`)
+      let guarded = 0
+      for (const [jobName, job] of Object.entries(jobs)) {
+        if (!isRecord(job) || typeof job['runs-on'] !== 'string' || !job['runs-on'].includes(enterprise)) continue
+        guarded += 1
+        expect(job['runs-on'], `${file} ${jobName} must gate ${enterprise} on the upstream repository`)
+          .toContain("github.repository == 'deepseek-harness/deepseek-harness'")
+        expect(evaluate(job['runs-on'], {}, 'maintainer', 'NBStarry/deepseek-harness'), `${file} ${jobName} fork runner`).toBe(hosted)
+      }
+      expect(guarded, `${file} must keep at least one ${enterprise} lane`).toBeGreaterThan(0)
     }
 
     // The run-gates aggregate lanes stop at the first blocking gate failure so

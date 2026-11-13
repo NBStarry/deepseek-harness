@@ -133,7 +133,7 @@ async function load(): Promise<Context> {
   ])
   const internal: ModuleLoaderV2 = {
     version: 'v2', loadCache: new Map(),
-    import: specifier => {
+    import: (specifier) => {
       if (!modules.has(specifier)) throw new Error(`unexpected Loader import: ${specifier}`)
       return Promise.resolve(modules.get(specifier))
     },
@@ -145,7 +145,9 @@ async function load(): Promise<Context> {
   ctx.loader.internal = internal
   await ctx.loader.create({ name: 'cordis:include', config: { path: pathToFileURL(configPath).href } })
   await ctx.loader.await()
-  expect([...ctx.loader.entries()].filter(entry => entry.fiber === undefined && !entry.disabled).map(entry => entry.options.name)).toEqual([])
+  expect([...ctx.loader.entries()]
+    .filter(entry => entry.fiber === undefined && !entry.disabled)
+    .map(entry => entry.options.name)).toEqual([])
   return ctx
 }
 

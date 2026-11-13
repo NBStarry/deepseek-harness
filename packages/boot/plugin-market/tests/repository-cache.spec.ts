@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process'
 import { createHash, randomBytes } from 'node:crypto'
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname, delimiter, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { DetailFailure } from '@deepseek-ai/dsh-plugin-detail'
@@ -13,6 +13,18 @@ import { RepositoryCache, type RepositoryCacheOptions } from '../src/repository-
 async function expectRejection(promise: Promise<unknown>, fields: object, message: string): Promise<void> {
   await expect(promise).rejects.toMatchObject(fields)
   await expect(promise).rejects.toThrow(message)
+}
+
+/** A `git` executable that never answers in time, so the deadline check does not race a real command. */
+function unresponsiveGitDirectory(): string {
+  const bin = join(root, 'unresponsive-git')
+  mkdirSync(bin, { recursive: true })
+  if (process.platform === 'win32') {
+    writeFileSync(join(bin, 'git.cmd'), '@echo off\r\nping -n 5 127.0.0.1 >nul\r\nexit /b 0\r\n')
+  } else {
+    writeFileSync(join(bin, 'git'), '#!/bin/sh\nsleep 5\n', { mode: 0o755 })
+  }
+  return bin
 }
 
 
@@ -149,9 +161,13 @@ it('reports an unreachable host as a network failure, a failed local command as 
   await expect(broken).rejects.toThrow('git update-ref')
   await expect(broken).rejects.not.toBeInstanceOf(DetailFailure)
   expect(readdirSync(join(root, 'cache'))).toEqual([])
-  // Git that cannot answer `git --version` within the deadline cannot run.
+  // Git that cannot answer `git --version` within the deadline cannot run. A 1 ms deadline races the version probe
+  // against `git init` (when the probe wins, the next command times out as a plain error), so keep the deadline
+  // behavior deterministic by putting an unresponsive `git` first on PATH.
   const other = repository('t2', { 'README.md': 'x' })
-  await expectRejection(cache({ timeoutMs: 1 }).read(other.url, other.commit, 'README.md', 100, signal), { reason: 'git-unavailable' }, 'timed out')
+  const systemPath = process.env.PATH ?? ''
+  vi.stubEnv('PATH', `${unresponsiveGitDirectory()}${delimiter}${systemPath}`)
+  await expectRejection(cache({ timeoutMs: 50 }).read(other.url, other.commit, 'README.md', 100, signal), { reason: 'git-unavailable' }, 'timed out')
   vi.stubEnv('PATH', join(root, 'no-git'))
   const missing = cache().read(other.url, other.commit, 'README.md', 100, signal)
   await expectRejection(missing, { reason: 'git-unavailable' }, 'git --version')

@@ -130,9 +130,9 @@ jobs:
           shasum -a 256 "$name" | tee "$name.sha256"
           echo "name=$name" >> "$GITHUB_OUTPUT"
 
-      - name: Write provenance
+      - name: Write build source record
         run: |
-          cat > provenance.json <<JSON
+          cat > build-source.json <<JSON
           {
             "workflow": "desktop-local-unsigned-build",
             "runId": "${{ github.run_id }}",
@@ -145,7 +145,7 @@ jobs:
             "runner": "macos-15"
           }
           JSON
-          cat provenance.json
+          cat build-source.json
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -155,4 +155,4 @@ jobs:
           path: |
             ${{ steps.archive.outputs.name }}
             ${{ steps.archive.outputs.name }}.sha256
-            provenance.json
+            build-source.json
