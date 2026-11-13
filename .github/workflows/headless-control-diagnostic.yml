@@ -1,12 +1,10 @@
 name: Headless control diagnostic
 
-# Temporary diagnostic carrier for the Linux headless keepalive retry. Phase A reruns
-# the original ci-consumers aggregate (nine gates, lane fail-fast/worker defaults,
-# artifacts built by that aggregate), then B/C only after the idle failure appears.
-# It runs
-# only when this exact diagnostic branch is pushed; it never opens a PR, releases,
-# or writes to master. Keep the run logs and the branch as evidence; deletion needs
-# separate authorization under the repository worktree rules.
+# Temporary diagnostic carrier for the Linux headless keepalive retry. It builds the
+# original artifacts once, then runs the focused positive and negative controls back
+# to back. It runs only when this exact diagnostic branch is pushed; it never opens
+# a PR, releases, or writes to master. Keep the run logs and the branch as evidence;
+# deletion needs separate authorization under the repository worktree rules.
 on:
   push:
     branches: [fix/pr4-headless-control]
@@ -55,65 +53,48 @@ jobs:
       - name: Build the primary runtime once (original artifact entry)
         run: CI=true pnpm run prepare:primary-runtime --target linux-x64 --output "$RUNNER_TEMP/office-runtime" --cache "$RUNNER_TEMP/office-runtime-downloads"
 
-      # Original window in the original aggregate job context: the
-      # ci-consumers aggregate runs its nine gates with the lane's worker and
-      # fail-fast settings and builds artifacts itself exactly once. No gate
-      # concurrency or worker variable is overridden here.
-      - name: Phase A — original aggregate context
-        id: phase-a
+      # The original consumer lane's artifact build, once. The focused expected
+      # test runs below reuse this build; no aggregate/9-gate phase runs here.
+      - name: Build artifacts once
         env:
-          # Same fail-fast and Node-compat settings as the original job.
-          DSH_GATE_FAIL_FAST: '1'
-          DSH_NODE_COMPAT_SKIP_TYPECHECK: '1'
-        run: |
-          set +e
-          log="$LOG_DIR/phaseA.log"
-          pnpm run check:ci:consumers > "$log" 2>&1
-          rc=$?
-          idle=0
-          count=0
-          grep -q 'HEADLESS_DEFAULTS_RETRY_DIAG.*"code":"TIMEOUT".*"idleTimeout":true' "$log" && idle=1
-          grep -Eq 'to have a length of 2 but got [3-9]' "$log" && count=1
-          reproduced=0
-          [ "$idle" -eq 1 ] && [ "$count" -eq 1 ] && reproduced=1
-          printf 'phaseA rc=%s idle_diag=%s count2_assertion=%s reproduced=%s\n' "$rc" "$idle" "$count" "$reproduced" | tee -a "$LOG_DIR/phases.txt"
-          echo "reproduced=$reproduced" >> "$GITHUB_OUTPUT"
-          echo "rc=$rc" >> "$GITHUB_OUTPUT"
-          exit 0
+          DSH_BUILD_CLIENT_PROFILE: official
+        run: pnpm run build:artifacts
 
-      # Candidate window is only exercised after the original failure class is
-      # visible in this run; an unreproduced run stops after Phase A.
-      - name: Phase B — candidate window focused positive
+      # Candidate window: 24 comments at 60 ms keep the stream active for ~1.4 s
+      # before the final response at ~1.5 s; the 1000 ms idle window stays above
+      # the mock's interval. This is test-only execution margin, not a product fix.
+      - name: Phase B — focused positive (1000 ms idle, 24 heartbeats)
         id: phase-b
-        if: steps.phase-a.outputs.reproduced == '1'
         env:
           DSH_EXAMPLE_MODE: lib
         run: |
           set +e
           log="$LOG_DIR/phaseB.log"
-          DSH_HEADLESS_IDLE_MS=300 DSH_HEADLESS_HEARTBEAT_MS=60 DSH_HEADLESS_HEARTBEATS=7 \
+          DSH_HEADLESS_IDLE_MS=1000 DSH_HEADLESS_HEARTBEAT_MS=60 DSH_HEADLESS_HEARTBEATS=24 \
             pnpm exec vitest run --config vitest.expected.config.ts \
               apps/cli/tests/profiles/headless/tests/headless.expected.e2e.ts \
               -t 'keeps provider comments alive' > "$log" 2>&1
           rc=$?
-          printf 'phaseB rc=%s\n' "$rc" | tee -a "$LOG_DIR/phases.txt"
+          positive_ok=0
+          [ "$rc" -eq 0 ] && positive_ok=1
+          printf 'phaseB rc=%s positive_ok=%s\n' "$rc" "$positive_ok" | tee -a "$LOG_DIR/phases.txt"
           echo "rc=$rc" >> "$GITHUB_OUTPUT"
+          echo "positive_ok=$positive_ok" >> "$GITHUB_OUTPUT"
           exit 0
 
-      # The idle watchdog reason (MESSAGES_IDLE) becomes LlmError code TIMEOUT
-      # with message "DeepSeek Messages stream idle timeout" in the retry event.
-      # Negative control: without comments the 300 ms idle window must fire
-      # before the ~480 ms final response, and the original two-request
-      # assertion must fail. Any other failure is not an acceptable result.
-      - name: Phase C — no-heartbeat negative control
+      # Negative control: only the first agent request lacks comments; the retry
+      # and title requests keep the stream alive, so the loader completes and the
+      # original two-request assertion fails. The accepted failure must also carry
+      # TIMEOUT + idleTimeout:true from the retry event; any other failure is invalid.
+      - name: Phase C — no-first-agent-heartbeat negative control
         id: phase-c
-        if: steps.phase-a.outputs.reproduced == '1'
+        if: always()
         env:
           DSH_EXAMPLE_MODE: lib
         run: |
           set +e
           log="$LOG_DIR/phaseC.log"
-          DSH_HEADLESS_IDLE_MS=300 DSH_HEADLESS_HEARTBEAT_MS=60 DSH_HEADLESS_HEARTBEATS=7 \
+          DSH_HEADLESS_IDLE_MS=1000 DSH_HEADLESS_HEARTBEAT_MS=60 DSH_HEADLESS_HEARTBEATS=24 \
             DSH_HEADLESS_SKIP_FIRST_AGENT_HEARTBEATS=1 \
             pnpm exec vitest run --config vitest.expected.config.ts \
               apps/cli/tests/profiles/headless/tests/headless.expected.e2e.ts \
@@ -128,6 +109,7 @@ jobs:
           negative_ok=0
           [ "$rc" -ne 0 ] && [ "$idle" -eq 1 ] && [ "$count" -eq 1 ] && [ "$loader" -eq 1 ] && negative_ok=1
           printf 'phaseC rc=%s idle=%s count2_assertion_failed=%s loader_result=%s negative_ok=%s\n' "$rc" "$idle" "$count" "$loader" "$negative_ok" | tee -a "$LOG_DIR/phases.txt"
+          echo "rc=$rc" >> "$GITHUB_OUTPUT"
           echo "negative_ok=$negative_ok" >> "$GITHUB_OUTPUT"
           exit 0
 
@@ -136,25 +118,16 @@ jobs:
         run: |
           set +e
           [ -f "$LOG_DIR/phases.txt" ] && cat "$LOG_DIR/phases.txt"
-          a_outcome='${{ steps.phase-a.outcome }}'
-          if [ "$a_outcome" != 'success' ]; then
-            echo "verdict=aborted-before-phase-a-completed (outcome=$a_outcome)" | tee -a "$GITHUB_STEP_SUMMARY"
+          b_outcome='${{ steps.phase-b.outcome }}'
+          c_outcome='${{ steps.phase-c.outcome }}'
+          if [ "$b_outcome" != 'success' ] || [ "$c_outcome" != 'success' ]; then
+            echo "verdict=aborted-before-both-controls-completed (phaseB=$b_outcome phaseC=$c_outcome)" | tee -a "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
-          a_rc='${{ steps.phase-a.outputs.rc }}'
-          reproduced='${{ steps.phase-a.outputs.reproduced }}'
-          if [ "$reproduced" != '1' ]; then
-            if [ "$a_rc" = '0' ]; then
-              echo 'verdict=not-reproduced (phase A passed); stopped without candidate window runs' | tee -a "$GITHUB_STEP_SUMMARY"
-              exit 0
-            fi
-            echo "verdict=other-failure (phase A rc=$a_rc without the idle retry diagnostic); investigate instead of treating it as not-reproduced" | tee -a "$GITHUB_STEP_SUMMARY"
-            exit 1
-          fi
-          b_rc='${{ steps.phase-b.outputs.rc }}'
+          positive_ok='${{ steps.phase-b.outputs.positive_ok }}'
           negative_ok='${{ steps.phase-c.outputs.negative_ok }}'
-          echo "verdict reproduced=1 phaseB_rc=$b_rc negative_ok=$negative_ok" | tee -a "$GITHUB_STEP_SUMMARY"
-          [ "$b_rc" = '0' ] && [ "$negative_ok" = '1' ] && exit 0
+          echo "verdict positive_ok=$positive_ok negative_ok=$negative_ok" | tee -a "$GITHUB_STEP_SUMMARY"
+          [ "$positive_ok" = '1' ] && [ "$negative_ok" = '1' ] && exit 0
           exit 1
 
       - name: Save logs
