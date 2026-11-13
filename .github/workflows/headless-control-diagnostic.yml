@@ -1,6 +1,9 @@
 name: Headless control diagnostic
 
-# Temporary diagnostic carrier for the Linux headless keepalive retry. It runs
+# Temporary diagnostic carrier for the Linux headless keepalive retry. Phase A reruns
+# the original ci-consumers aggregate (nine gates, lane fail-fast/worker defaults,
+# artifacts built by that aggregate), then B/C only after the idle failure appears.
+# It runs
 # only when this exact diagnostic branch is pushed; it never opens a PR, releases,
 # or writes to master. Keep the run logs and the branch as evidence; deletion needs
 # separate authorization under the repository worktree rules.
@@ -52,23 +55,28 @@ jobs:
       - name: Build the primary runtime once (original artifact entry)
         run: CI=true pnpm run prepare:primary-runtime --target linux-x64 --output "$RUNNER_TEMP/office-runtime" --cache "$RUNNER_TEMP/office-runtime-downloads"
 
-      - name: Build artifacts once (original build entry)
-        run: pnpm run build:artifacts
-
-      # Original window and original test:expected lane concurrency. A failure
-      # here is data, not a step failure, so the exit code is always collected.
-      - name: Phase A — original window in the full expected lane
+      # Original window in the original aggregate job context: the
+      # ci-consumers aggregate runs its nine gates with the lane's worker and
+      # fail-fast settings and builds artifacts itself exactly once. No gate
+      # concurrency or worker variable is overridden here.
+      - name: Phase A — original aggregate context
         id: phase-a
         env:
-          DSH_EXAMPLE_MODE: lib
+          # Same fail-fast and Node-compat settings as the original job.
+          DSH_GATE_FAIL_FAST: '1'
+          DSH_NODE_COMPAT_SKIP_TYPECHECK: '1'
         run: |
           set +e
           log="$LOG_DIR/phaseA.log"
-          pnpm run test:expected > "$log" 2>&1
+          pnpm run check:ci:consumers > "$log" 2>&1
           rc=$?
+          idle=0
+          count=0
+          grep -q 'HEADLESS_DEFAULTS_RETRY_DIAG.*"code":"TIMEOUT".*"idleTimeout":true' "$log" && idle=1
+          grep -Eq 'to have a length of 2 but got [3-9]' "$log" && count=1
           reproduced=0
-          grep -q 'HEADLESS_DEFAULTS_RETRY_DIAG.*"code":"TIMEOUT".*"idleTimeout":true' "$log" && reproduced=1
-          printf 'phaseA rc=%s reproduced=%s\n' "$rc" "$reproduced" | tee -a "$LOG_DIR/phases.txt"
+          [ "$idle" -eq 1 ] && [ "$count" -eq 1 ] && reproduced=1
+          printf 'phaseA rc=%s idle_diag=%s count2_assertion=%s reproduced=%s\n' "$rc" "$idle" "$count" "$reproduced" | tee -a "$LOG_DIR/phases.txt"
           echo "reproduced=$reproduced" >> "$GITHUB_OUTPUT"
           echo "rc=$rc" >> "$GITHUB_OUTPUT"
           exit 0
