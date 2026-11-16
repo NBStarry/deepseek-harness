@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { runInNewContext } from 'node:vm'
 import * as yaml from 'js-yaml'
@@ -1466,10 +1466,11 @@ describe('Weighted approval workflow', () => {
       'cancel-in-progress': false,
     })
     expect(job).toMatchObject({
-      if: "(github.event_name != 'pull_request_target' || github.event.pull_request.state == 'open') && "
+      if: "github.repository != 'NBStarry/deepseek-harness' && "
+        + "((github.event_name != 'pull_request_target' || github.event.pull_request.state == 'open') && "
         + "(github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success') && "
         + "(github.event_name != 'issue_comment' || (github.event.issue.pull_request && github.event.issue.state == 'open' &&\n"
-        + "  (contains(github.event.comment.body, '/delegate') || contains(github.event.changes.body.from, '/delegate'))))",
+        + "  (contains(github.event.comment.body, '/delegate') || contains(github.event.changes.body.from, '/delegate')))))",
       name: 'weighted approval publisher',
       'runs-on': 'ubuntu-latest',
       'timeout-minutes': 5,
@@ -1531,7 +1532,7 @@ describe('Weighted approval workflow', () => {
       run: 'node .github/review-ownership/check-approval.mjs',
     })
     expect(recordJob).toMatchObject({
-      if: "github.event.pull_request.state == 'open'",
+      if: "github.repository != 'NBStarry/deepseek-harness' && (github.event.pull_request.state == 'open')",
       name: 'record weighted approval review event',
       'runs-on': 'ubuntu-latest',
       'timeout-minutes': 2,
@@ -1544,6 +1545,43 @@ describe('Weighted approval workflow', () => {
     expect(JSON.stringify(reviewEvent)).not.toContain('github.token')
     expect(JSON.stringify(reviewEvent)).not.toContain('secrets.')
   })
+
+  it('disables weighted approval on the personal fork without touching other repositories or technical CI', () => {
+    const guard = "github.repository != 'NBStarry/deepseek-harness'"
+    const publisher = loadWorkflow('.github/workflows/weighted-approval.yml')
+    const reviewEvent = loadWorkflow('.github/workflows/weighted-approval-review-event.yml')
+    const publishJob = workflowJob(publisher, 'publish-status')
+    const recordJob = workflowJob(reviewEvent, 'record-review-event')
+    if (typeof publishJob.if !== 'string' || typeof recordJob.if !== 'string') {
+      throw new TypeError('weighted approval jobs must define conditions')
+    }
+    expect(publishJob.if.startsWith(`${guard} && ((`)).toBe(true)
+    expect(recordJob.if.startsWith(`${guard} && (`)).toBe(true)
+    // The guard reads the base repository, never a pull-request head, so a PR
+    // from a personal fork into the upstream repository still runs its check.
+    expect(JSON.stringify({ publisher, reviewEvent })).not.toContain('head.repo')
+    expect(JSON.stringify({ publisher, reviewEvent })).not.toContain('pull_request.head')
+
+    const workflowDirectory = resolve(root, '.github/workflows')
+    const scoringWorkflows = readdirSync(workflowDirectory)
+      .filter(name => name.endsWith('.yml'))
+      .filter(name => readFileSync(resolve(workflowDirectory, name), 'utf8').includes('check-approval.mjs'))
+    expect(scoringWorkflows).toEqual(['weighted-approval.yml'])
+    for (const file of ['ci.yml', 'ci-windows.yml', 'ci-python.yml']) {
+      expect(readFileSync(resolve(workflowDirectory, file), 'utf8')).not.toContain(guard)
+    }
+
+    const readme = readFileSync(resolve(root, '.github/review-ownership/README.md'), 'utf8')
+    expect(readme).toContain('Personal fork owner confirmation')
+    expect(readme).toContain('exact candidate commit SHA')
+    expect(readme).toContain('Any new head')
+    expect(readme).toContain('not a GitHub-enforced branch lock')
+    expect(readme).toContain('publishes no weighted status or decision')
+    expect(readme).toContain('does not rewrite existing weighted statuses')
+    expect(readme).toContain('all required technical checks have passed')
+    expect(readme).toContain('non-blocking or observational results')
+    expect(readme).toContain('not treated as passed or as merge prerequisites')
+  })
 })
 
 describe('Issue lifecycle workflow', () => {
@@ -1555,6 +1593,7 @@ describe('Issue lifecycle workflow', () => {
 
     expect(lifecycle.on).toHaveProperty('pull_request')
     expect(lifecycle.on).toHaveProperty('pull_request_review')
+    expect(lifecycleJob.if).toContain("github.repository == 'deepseek-harness/deepseek-harness'")
     expect(lifecycleJob.if).toContain("github.event.review.state == 'changes_requested'")
     expect(lifecycleJob.if).toContain('github.event.changes.body != null')
     // Keep the subscription-type gates: issue-lifecycle does not re-subscribe
@@ -1602,7 +1641,7 @@ describe('Issue lifecycle workflow', () => {
 
     expect(tokenStep).toMatchObject({
       id: 'app-token',
-      if: "${{ steps.preflight.outputs.needs-project == 'true' }}",
+      if: "${{ steps.preflight.outputs.needs-project == 'true' && github.repository == 'deepseek-harness/deepseek-harness' }}",
       uses: 'actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1',
       with: {
         'client-id': '${{ vars.DSH_ISSUE_APP_CLIENT_ID }}',
