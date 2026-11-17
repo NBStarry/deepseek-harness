@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSyn
 import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import test from 'node:test'
+import { afterEach, beforeEach, test } from 'node:test'
 
 import { api, graphql, initializeIssueStartDate, issueSnapshot } from './github.mjs'
 import { auditIssue, initializePullRequestStartDates, repairIssueLabels, runLifecycle } from './lifecycle.mjs'
@@ -155,6 +155,20 @@ const reviewedPull = (labels) => ({
   references: { all: [2], resolving: [], related: [2] },
   issues: new Map([[2, { priority: null }]]),
 })
+
+// CI exports GITHUB_REPOSITORY for the event repository. These fixtures pin their
+// own API host, so each case must start without an ambient repository override.
+const initialGithubRepository = process.env.GITHUB_REPOSITORY
+
+beforeEach(() => {
+  delete process.env.GITHUB_REPOSITORY
+})
+
+afterEach(() => {
+  if (initialGithubRepository === undefined) delete process.env.GITHUB_REPOSITORY
+  else process.env.GITHUB_REPOSITORY = initialGithubRepository
+})
+
 
 test('keeps only Bug, Feature, and Task Issue templates with used frontmatter', () => {
   const directory = new URL('../ISSUE_TEMPLATE/', import.meta.url)
