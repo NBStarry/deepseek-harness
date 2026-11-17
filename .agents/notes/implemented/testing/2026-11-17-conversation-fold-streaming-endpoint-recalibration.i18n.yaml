@@ -1,0 +1,22 @@
+# Bilingual-pair consistency record for 2026-11-17-conversation-fold-streaming-endpoint-recalibration.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/testing/2026-11-17-conversation-fold-streaming-endpoint-recalibration.md
+/agent-note-conversation-fold-streaming-endpoint-recalibration:
+  en: 379f9f00895780fb
+  zh: fef448e2270376d8
+/agent-note-conversation-fold-streaming-endpoint-recalibration/problem:
+  en: 0ba508cd8d685516
+  zh: c3838de57fb90be2
+/agent-note-conversation-fold-streaming-endpoint-recalibration/decision:
+  en: 17041257848f8c33
+  zh: 8282674420d55ff6
+/agent-note-conversation-fold-streaming-endpoint-recalibration/calibration:
+  en: a60048cdd16fc9f3
+  zh: 137f3e41633991a6
+/agent-note-conversation-fold-streaming-endpoint-recalibration/alternatives-considered:
+  en: 649a750fbad304f3
+  zh: b158cd92330fd8b9
+/agent-note-conversation-fold-streaming-endpoint-recalibration/consequences:
+  en: 0458492de2a09aff
+  zh: 9430022130caadd3
