@@ -25,6 +25,13 @@ env:
   TESTED_BENCH_BLOB: 56fc53b60113a2ae5cbd6a45827e158563af3571
   TESTED_BENCH_AFTER_SHA256: 773c94844fe5680cb30ef432b41f68fcd20d651addd46992227f8de5d891f51e
   PLANNED_PATCH_SHA256: f84acac63d0c11d3536d44a8cbec8f8b739a8811db13082c01550cad87266d9f
+  CSS_BEFORE_SHA256: ed939e63d6e6479b7b240a79c3231ade8c32f55235002ac33fc6a085e0497b60
+  CSS_AFTER_SHA256: 58176c3b4eb5ac23355949ec143c5bcbf61b9f0553b4ba07ea044ec18bd63bd1
+  CSS_PATCH_SHA256: 13b30914f88b062f19212dba8508443649bb2182f493d691a506d19b050e6319
+  CSS_PATCH_B64: 'ZGlmZiAtLWdpdCBhL3BhY2thZ2VzL2NsaWVudC91aS1jaGF0L3NyYy9jbGllbnQvY2hhdC9DaGF0Vmlldy5tb2R1bGUuY3NzIGIvcGFja2FnZXMvY2xpZW50L3VpLWNoYXQvc3JjL2NsaWVudC9jaGF0L0NoYXRWaWV3Lm1vZHVsZS5jc3MKaW5kZXggNWY2NDBkYmIuLmUzNjQ0MDczIDEwMDY0NAotLS0gYS9wYWNrYWdlcy9jbGllbnQvdWktY2hhdC9zcmMvY2xpZW50L2NoYXQvQ2hhdFZpZXcubW9kdWxlLmNzcworKysgYi9wYWNrYWdlcy9jbGllbnQvdWktY2hhdC9zcmMvY2xpZW50L2NoYXQvQ2hhdFZpZXcubW9kdWxlLmNzcwpAQCAtNzQsOCArNzQsOSBAQAogICAgYGhpZGRlbj0idW50aWwtZm91bmQiYCByZXRhaW5zIGEgc2VhcmNoYWJsZSB6ZXJvLWhlaWdodCBib3g7IGhpZGRlbiBhbmQgZW1wdHkKICAgIFNlYXRzIGRvIG5vdCBjb250cmlidXRlIHNwYWNpbmcuIFRoZSBvbGRlci1oaXN0b3J5IGNvbnRyb2wgcHJlY2VkZXMgdGhlIGFuY2hvcjsKICAgIGFuIGFuY2VzdG9yIDpoYXMoKSBoZXJlIGFsc28gaW52YWxpZGF0ZXMgdGhlIGhpc3Rvcnkgb24gdW5yZWxhdGVkIGRlc2NlbmRhbnQgZWRpdHMuICovCisvKiBaZXJvLXNwZWNpZmljaXR5IHBhcmVudCBndWFyZDsgdGhlIH4gc2lkZXMgYWxyZWFkeSBzaGFyZSB0aGlzIHBhcmVudC4gKi8KIDppcyguY29sdW1uLCA6Z2xvYmFsKFtkYXRhLXNsb3Q9ImNvbnZlcnNhdGlvbi5jaGF0LmZsb3ciXSkpID4gOm5vdChbaGlkZGVuXSk6bm90KC50ZXh0SW50ZXJhY3Rpb24pOm5vdCguZmxvd0l0ZW06aXMoOmVtcHR5LCA6aGFzKD4gW2RhdGEtc2xvdD0iY29udmVyc2F0aW9uLmNoYXQubm9kZSJdOmVtcHR5KSkpCi0gIH4gOm5vdChbaGlkZGVuXSk6bm90KC50ZXh0SW50ZXJhY3Rpb24pOm5vdCguZmxvd0l0ZW06aXMoOmVtcHR5LCA6aGFzKD4gW2RhdGEtc2xvdD0iY29udmVyc2F0aW9uLmNoYXQubm9kZSJdOmVtcHR5KSkpLAorICB+IDpub3QoW2hpZGRlbl0pOm5vdCgudGV4dEludGVyYWN0aW9uKTpub3QoLmZsb3dJdGVtOmlzKDplbXB0eSwgOmhhcyg+IFtkYXRhLXNsb3Q9ImNvbnZlcnNhdGlvbi5jaGF0Lm5vZGUiXTplbXB0eSkpKTp3aGVyZSg6aXMoLmNvbHVtbiwgOmdsb2JhbChbZGF0YS1zbG90PSJjb252ZXJzYXRpb24uY2hhdC5mbG93Il0pKSA+ICopLAogLmNvbHVtbiA+IC5vbGRlciArIDpnbG9iYWwoW2RhdGEtc2xvdD0iY29udmVyc2F0aW9uLmNoYXQuZmxvdyJdKQogICA+IDpub3QoW2hpZGRlbl0pOm5vdCgudGV4dEludGVyYWN0aW9uKTpub3QoLmZsb3dJdGVtOmlzKDplbXB0eSwgOmhhcyg+IFtkYXRhLXNsb3Q9ImNvbnZlcnNhdGlvbi5jaGF0Lm5vZGUiXTplbXB0eSkpKSB7CiAgIG1hcmdpbi10b3A6IHZhcigtLWRzaC1jaGF0LWZsb3ctZ2FwLCA0cHgpOwo='
+  FLOW_HELPER_SHA256: 4bcea8d2dc58b547ebb200b189cdb6731c32eafd56ffa77d944ae5505980e263
+  FLOW_HELPER_B64: 'LyoqCiAqIEJvdW5kZWQgcmVhbC1DaHJvbWl1bSBjb21wYXJpc29uIG9mIHRoZSBiYXNlbGluZSBhbmQgZ3VhcmRlZCBDaGF0Vmlldy5tb2R1bGUuY3NzLgogKiBSdW4gZnJvbSB0aGUgcmVwb3NpdG9yeSByb290LiBUaGUgYmFzZWxpbmUgY29tZXMgZnJvbSBnaXQgSEVBRDsgdGhlIGNhbmRpZGF0ZSBpcyB0aGUgd29ya2luZyBmaWxlLgogKiBUaGUgaGVscGVyIHVzZXMgdGhlIHJlcG9zaXRvcnkncyBkZWNsYXJlZCBsaWdodG5pbmdjc3MgYW5kIGJlbmNobWFyayBQbGF5d3JpZ2h0IGRlcGVuZGVuY3ksIGFuZAogKiBDaHJvbWl1bSdzIGJ1bmRsZWQgYnJvd3NlciB1bmxlc3MgRFNIX0NIUk9NRV9QQVRIIGlzIGV4cGxpY2l0bHkgc2V0LgogKgogKiBUaGlzIGlzIGFuIEhUTUwgZml4dHVyZSBjaGVjaywgbm90IGEgZnVsbCBBcHAgcmVwbGF5LiBJdCBkb2VzIG5vdCBjb25uZWN0IHRvIGFuIGV4aXN0aW5nIGJyb3dzZXIgb3IKICogcHJvZmlsZTsgUGxheXdyaWdodCBvd25zIHRoZSBicm93c2VyL2NvbnRleHQgYW5kIGl0cyB0ZW1wb3JhcnkgcHJvZmlsZSB1bmRlciB0aGUgcHJpdmF0ZSBUTVBESVIuCiAqLwppbXBvcnQgeyBleGVjRmlsZVN5bmMgfSBmcm9tICdub2RlOmNoaWxkX3Byb2Nlc3MnCmltcG9ydCB7IGNyZWF0ZUhhc2ggfSBmcm9tICdub2RlOmNyeXB0bycKaW1wb3J0IHsgY3JlYXRlUmVxdWlyZSB9IGZyb20gJ25vZGU6bW9kdWxlJwppbXBvcnQgeyByZWFkRmlsZSB9IGZyb20gJ25vZGU6ZnMvcHJvbWlzZXMnCmltcG9ydCB7IGpvaW4gfSBmcm9tICdub2RlOnBhdGgnCgpjb25zdCByZXBvID0gcHJvY2Vzcy5jd2QoKQpjb25zdCBjc3NQYXRoID0gJ3BhY2thZ2VzL2NsaWVudC91aS1jaGF0L3NyYy9jbGllbnQvY2hhdC9DaGF0Vmlldy5tb2R1bGUuY3NzJwpjb25zdCByZXF1aXJlRnJvbVJlcG8gPSBjcmVhdGVSZXF1aXJlKGpvaW4ocmVwbywgJ3BhY2thZ2UuanNvbicpKQpjb25zdCByZXF1aXJlRnJvbUJlbmNobWFya3MgPSBjcmVhdGVSZXF1aXJlKGpvaW4ocmVwbywgJ2JlbmNobWFya3MvcGFja2FnZS5qc29uJykpCmNvbnN0IHsgdHJhbnNmb3JtIH0gPSByZXF1aXJlRnJvbVJlcG8oJ2xpZ2h0bmluZ2NzcycpCmNvbnN0IHsgY2hyb21pdW0gfSA9IHJlcXVpcmVGcm9tQmVuY2htYXJrcygncGxheXdyaWdodCcpCgpjb25zdCBiYXNlbGluZSA9IGV4ZWNGaWxlU3luYygnZ2l0JywgWyctQycsIHJlcG8sICdzaG93JywgYEhFQUQ6JHtjc3NQYXRofWBdLCB7IGVuY29kaW5nOiAndXRmOCcgfSkKY29uc3QgY2FuZGlkYXRlID0gYXdhaXQgcmVhZEZpbGUoam9pbihyZXBvLCBjc3NQYXRoKSwgJ3V0ZjgnKQoKZnVuY3Rpb24gY29tcGlsZShzb3VyY2UpIHsKICBjb25zdCByZXN1bHQgPSB0cmFuc2Zvcm0oewogICAgZmlsZW5hbWU6IGpvaW4ocmVwbywgY3NzUGF0aCksCiAgICBjb2RlOiBCdWZmZXIuZnJvbShzb3VyY2UpLAogICAgY3NzTW9kdWxlczogdHJ1ZSwKICAgIG1pbmlmeTogZmFsc2UsCiAgfSkKICByZXR1cm4geyBjc3M6IHJlc3VsdC5jb2RlLnRvU3RyaW5nKCksIGV4cG9ydHM6IHJlc3VsdC5leHBvcnRzIH0KfQoKY29uc3QgYmVmb3JlID0gY29tcGlsZShiYXNlbGluZSkKY29uc3QgYWZ0ZXIgPSBjb21waWxlKGNhbmRpZGF0ZSkKCmZ1bmN0aW9uIGNsYXNzZXNPZihleHBvcnRzKSB7CiAgcmV0dXJuIHsKICAgIGNvbHVtbjogZXhwb3J0cy5jb2x1bW4ubmFtZSwKICAgIGZsb3dJdGVtOiBleHBvcnRzLmZsb3dJdGVtLm5hbWUsCiAgICBvbGRlcjogZXhwb3J0cy5vbGRlci5uYW1lLAogICAgdGV4dEludGVyYWN0aW9uOiBleHBvcnRzLnRleHRJbnRlcmFjdGlvbi5uYW1lLAogICAgcnVubmluZzogZXhwb3J0cy5ydW5uaW5nLm5hbWUsCiAgfQp9CgpmdW5jdGlvbiBmaXh0dXJlKGNsYXNzZXMsIHdpdGhPbGRlcikgewogIGNvbnN0IHsgY29sdW1uLCBmbG93SXRlbSwgb2xkZXIsIHRleHRJbnRlcmFjdGlvbiwgcnVubmluZyB9ID0gY2xhc3NlcwogIHJldHVybiBgPCFkb2N0eXBlIGh0bWw+PG1ldGEgY2hhcnNldD0idXRmLTgiPjxzdHlsZT4keycnfTwvc3R5bGU+PGJvZHk+CiAgPGRpdiBjbGFzcz0iJHtjb2x1bW59IiBpZD0iY29sdW1uIj4KICAgICR7d2l0aE9sZGVyID8gYDxkaXYgY2xhc3M9IiR7b2xkZXJ9IiBpZD0ib2xkZXIiPm9sZGVyPC9kaXY+YCA6ICcnfQogICAgPGRpdiBkYXRhLXNsb3Q9ImNvbnZlcnNhdGlvbi5jaGF0LmZsb3ciIGlkPSJmbG93IiBzdHlsZT0iZGlzcGxheTpjb250ZW50cyI+CiAgICAgIDxkaXYgY2xhc3M9IiR7Zmxvd0l0ZW19IiBpZD0iZmlyc3QiPmZpcnN0PC9kaXY+CiAgICAgIDwhLS0gY29tbWVudCBzaWJsaW5nIC0tPgogICAgICB0ZXh0IHNpYmxpbmcKICAgICAgPGRpdiBjbGFzcz0iJHtmbG93SXRlbX0iIGhpZGRlbiBpZD0iaGlkZGVuIj5oaWRkZW48L2Rpdj4KICAgICAgPGRpdiBjbGFzcz0iJHtmbG93SXRlbX0iIGhpZGRlbj0idW50aWwtZm91bmQiIGlkPSJoaWRkZW4tdW50aWwiPmhpZGRlbiB1bnRpbCBmb3VuZDwvZGl2PgogICAgICA8ZGl2IGNsYXNzPSIke2Zsb3dJdGVtfSIgaWQ9ImVtcHR5Ij48L2Rpdj4KICAgICAgPGRpdiBjbGFzcz0iJHtmbG93SXRlbX0iIGlkPSJlbXB0eS1ub2RlIj48ZGl2IGRhdGEtc2xvdD0iY29udmVyc2F0aW9uLmNoYXQubm9kZSI+PC9kaXY+PC9kaXY+CiAgICAgIDxkaXYgY2xhc3M9IiR7Zmxvd0l0ZW19IiBpZD0ibm9ybWFsIj48c3Bhbj5ub3JtYWw8L3NwYW4+PC9kaXY+CiAgICAgIDxkaXYgY2xhc3M9IiR7Zmxvd0l0ZW19ICR7dGV4dEludGVyYWN0aW9ufSIgaWQ9InRleHQtaW50ZXJhY3Rpb24iPmludGVyYWN0aW9uPC9kaXY+CiAgICAgIDxkaXYgaWQ9Imdyb3VwIj5ncm91cDwvZGl2PgogICAgICA8ZGl2IGNsYXNzPSIke2Zsb3dJdGVtfSIgZGF0YS1jaGF0LWdyb3VwLXBhcnQ9InJlc3BvbnNlIiBpZD0icmVzcG9uc2UiPnJlc3BvbnNlPC9kaXY+CiAgICAgIDxkaXYgY2xhc3M9IiR7Zmxvd0l0ZW19IiBpZD0iYWZ0ZXItcmVzcG9uc2UiPmFmdGVyIHJlc3BvbnNlPC9kaXY+CiAgICAgIDxkaXYgY2xhc3M9IiR7Zmxvd0l0ZW19IiBkYXRhLWNoYXQtZmxvdy1raW5kPSJ0dXJuLXByb2Nlc3MiIGlkPSJwcm9jZXNzIj48ZGl2IGRhdGEtc2xvdD0iY29udmVyc2F0aW9uLmNoYXQubm9kZSI+cHJvY2VzczwvZGl2PjwvZGl2PgogICAgICA8ZGl2IGNsYXNzPSIke2Zsb3dJdGVtfSIgaWQ9ImFmdGVyLXByb2Nlc3MiPmFmdGVyIHByb2Nlc3M8L2Rpdj4KICAgICAgPGRpdiBjbGFzcz0iJHtmbG93SXRlbX0iIGlkPSJzdGVlcmluZyI+PGRpdiBkYXRhLXNsb3Q9ImNvbnZlcnNhdGlvbi5jaGF0Lm5vZGUiPjxkaXYgZGF0YS1jaGF0LXN0ZWVyaW5nLWJhdGNoPSJzdGFydCI+PC9kaXY+PC9kaXY+PC9kaXY+CiAgICAgIDxkaXYgY2xhc3M9IiR7cnVubmluZ30iIGlkPSJydW5uaW5nIj5ydW5uaW5nPC9kaXY+CiAgICAgIDxkaXYgY2xhc3M9IiR7Zmxvd0l0ZW19IiBkYXRhLXBlbmRpbmctc3RlZXJpbmcgaWQ9InBlbmRpbmciPnBlbmRpbmc8L2Rpdj4KICAgICAgPGRpdiBjbGFzcz0iJHtmbG93SXRlbX0iIGRhdGEtY2hhdC1mbG93LWtpbmQ9InR1cm4tdGFpbCIgaWQ9InRhaWwiPnRhaWw8L2Rpdj4KICAgICAgPGRpdiBpZD0ibmVzdGVkLXdyYXAiPjxkaXYgY2xhc3M9IiR7Zmxvd0l0ZW19IiBpZD0ibmVzdGVkIj5uZXN0ZWQ8L2Rpdj48L2Rpdj4KICAgIDwvZGl2PgogICAgPGRpdiBjbGFzcz0iJHtmbG93SXRlbX0iIGlkPSJkaXJlY3QxIj5kaXJlY3QxPC9kaXY+CiAgICA8ZGl2IGNsYXNzPSIke2Zsb3dJdGVtfSIgaWQ9ImRpcmVjdDIiPmRpcmVjdDI8L2Rpdj4KICA8L2Rpdj4KPC9ib2R5PmAKfQoKZnVuY3Rpb24gcGFyZW50U2VsZWN0b3IoY2xhc3NlcykgewogIHJldHVybiBgOmlzKC4ke2NsYXNzZXMuY29sdW1ufSwgW2RhdGEtc2xvdD0iY29udmVyc2F0aW9uLmNoYXQuZmxvdyJdKWAKfQoKZnVuY3Rpb24gZWxpZ2libGUoY2xhc3NlcykgewogIHJldHVybiBgOm5vdChbaGlkZGVuXSk6bm90KC4ke2NsYXNzZXMudGV4dEludGVyYWN0aW9ufSk6bm90KC4ke2NsYXNzZXMuZmxvd0l0ZW19OmlzKDplbXB0eSwgOmhhcyg+IFtkYXRhLXNsb3Q9ImNvbnZlcnNhdGlvbi5jaGF0Lm5vZGUiXTplbXB0eSkpKWAKfQoKZnVuY3Rpb24gc2VsZWN0b3JzKGNsYXNzZXMpIHsKICBjb25zdCBwYXJlbnQgPSBwYXJlbnRTZWxlY3RvcihjbGFzc2VzKQogIGNvbnN0IHMgPSBlbGlnaWJsZShjbGFzc2VzKQogIHJldHVybiB7CiAgICBvcmlnaW5hbDogYCR7cGFyZW50fSA+ICR7c30gfiAke3N9LCAuJHtjbGFzc2VzLmNvbHVtbn0gPiAuJHtjbGFzc2VzLm9sZGVyfSArIFtkYXRhLXNsb3Q9ImNvbnZlcnNhdGlvbi5jaGF0LmZsb3ciXSA+ICR7c31gLAogICAgY2FuZGlkYXRlOiBgJHtwYXJlbnR9ID4gJHtzfSB+ICR7c306d2hlcmUoOmlzKC4ke2NsYXNzZXMuY29sdW1ufSwgW2RhdGEtc2xvdD0iY29udmVyc2F0aW9uLmNoYXQuZmxvdyJdKSA+ICopLCAuJHtjbGFzc2VzLmNvbHVtbn0gPiAuJHtjbGFzc2VzLm9sZGVyfSArIFtkYXRhLXNsb3Q9ImNvbnZlcnNhdGlvbi5jaGF0LmZsb3ciXSA+ICR7c31gLAogIH0KfQoKY29uc3QgaWRzID0gWydmaXJzdCcsICdoaWRkZW4nLCAnaGlkZGVuLXVudGlsJywgJ2VtcHR5JywgJ2VtcHR5LW5vZGUnLCAnbm9ybWFsJywgJ3RleHQtaW50ZXJhY3Rpb24nLAogICdncm91cCcsICdyZXNwb25zZScsICdhZnRlci1yZXNwb25zZScsICdwcm9jZXNzJywgJ2FmdGVyLXByb2Nlc3MnLCAnc3RlZXJpbmcnLCAncnVubmluZycsICdwZW5kaW5nJywKICAndGFpbCcsICdkaXJlY3QxJywgJ2RpcmVjdDInLCAnbmVzdGVkJ10KY29uc3QgZXhwZWN0ZWQgPSB7CiAgd2l0aE9sZGVyOiB7IGZpcnN0OiAnNHB4JywgJ2FmdGVyLXJlc3BvbnNlJzogJzEycHgnLCAnYWZ0ZXItcHJvY2Vzcyc6ICcxNnB4Jywgc3RlZXJpbmc6ICc0NHB4JywKICAgIHBlbmRpbmc6ICcwcHgnLCBlbXB0eTogJzBweCcsICdlbXB0eS1ub2RlJzogJzBweCcsIG5lc3RlZDogJzBweCcgfSwKICB3aXRob3V0T2xkZXI6IHsgZmlyc3Q6ICcwcHgnLCAnYWZ0ZXItcmVzcG9uc2UnOiAnMTJweCcsICdhZnRlci1wcm9jZXNzJzogJzE2cHgnLCBzdGVlcmluZzogJzQ0cHgnLAogICAgcGVuZGluZzogJzBweCcsIGVtcHR5OiAnMHB4JywgJ2VtcHR5LW5vZGUnOiAnMHB4JywgbmVzdGVkOiAnMHB4JyB9LAp9Cgpjb25zdCBsYXVuY2hPcHRpb25zID0geyBoZWFkbGVzczogdHJ1ZSwgYXJnczogWyctLW5vLWZpcnN0LXJ1bicsICctLW5vLWRlZmF1bHQtYnJvd3Nlci1jaGVjaycsICctLWRpc2FibGUtZXh0ZW5zaW9ucyddIH0KaWYgKHByb2Nlc3MuZW52LkRTSF9DSFJPTUVfUEFUSCAhPT0gdW5kZWZpbmVkICYmIHByb2Nlc3MuZW52LkRTSF9DSFJPTUVfUEFUSCAhPT0gJycpIHsKICBsYXVuY2hPcHRpb25zLmV4ZWN1dGFibGVQYXRoID0gcHJvY2Vzcy5lbnYuRFNIX0NIUk9NRV9QQVRICn0KCmNvbnN0IGJyb3dzZXIgPSBhd2FpdCBjaHJvbWl1bS5sYXVuY2gobGF1bmNoT3B0aW9ucykKdHJ5IHsKICBjb25zdCBjb250ZXh0ID0gYXdhaXQgYnJvd3Nlci5uZXdDb250ZXh0KCkKICBjb25zdCByZXN1bHRzID0ge30KICBmb3IgKGNvbnN0IHdpdGhPbGRlciBvZiBbdHJ1ZSwgZmFsc2VdKSB7CiAgICBjb25zdCB2YXJpYW50ID0gd2l0aE9sZGVyID8gJ3dpdGhPbGRlcicgOiAnd2l0aG91dE9sZGVyJwogICAgcmVzdWx0c1t2YXJpYW50XSA9IHt9CiAgICBmb3IgKGNvbnN0IFtuYW1lLCBjb21waWxlZF0gb2YgW1snYmVmb3JlJywgYmVmb3JlXSwgWydhZnRlcicsIGFmdGVyXV0pIHsKICAgICAgY29uc3QgcGFnZSA9IGF3YWl0IGNvbnRleHQubmV3UGFnZSgpCiAgICAgIGNvbnN0IGNsYXNzZXMgPSBjbGFzc2VzT2YoY29tcGlsZWQuZXhwb3J0cykKICAgICAgYXdhaXQgcGFnZS5zZXRDb250ZW50KGZpeHR1cmUoY2xhc3Nlcywgd2l0aE9sZGVyKS5yZXBsYWNlKCc8c3R5bGU+PC9zdHlsZT4nLCBgPHN0eWxlPiR7Y29tcGlsZWQuY3NzfTwvc3R5bGU+YCkpCiAgICAgIGNvbnN0IHJlc3VsdCA9IGF3YWl0IHBhZ2UuZXZhbHVhdGUoKHsgc2VsZWN0b3JzLCBpZHMgfSkgPT4gewogICAgICAgIGNvbnN0IG1hdGNoZWQgPSB7fQogICAgICAgIGZvciAoY29uc3QgW2tleSwgc2VsZWN0b3JdIG9mIE9iamVjdC5lbnRyaWVzKHNlbGVjdG9ycykpIHsKICAgICAgICAgIG1hdGNoZWRba2V5XSA9IFsuLi5kb2N1bWVudC5xdWVyeVNlbGVjdG9yQWxsKHNlbGVjdG9yKV0ubWFwKG5vZGUgPT4gbm9kZS5pZCkKICAgICAgICB9CiAgICAgICAgY29uc3Qgc3R5bGVzID0ge30KICAgICAgICBmb3IgKGNvbnN0IGlkIG9mIGlkcykgewogICAgICAgICAgY29uc3Qgbm9kZSA9IGRvY3VtZW50LmdldEVsZW1lbnRCeUlkKGlkKQogICAgICAgICAgaWYgKG5vZGUgPT09IG51bGwpIHRocm93IG5ldyBFcnJvcihgbWlzc2luZyBmaXh0dXJlIG5vZGUgJHtpZH1gKQogICAgICAgICAgY29uc3Qgc3R5bGUgPSBnZXRDb21wdXRlZFN0eWxlKG5vZGUpCiAgICAgICAgICBzdHlsZXNbaWRdID0geyBtYXJnaW5Ub3A6IHN0eWxlLm1hcmdpblRvcCwgaGVpZ2h0OiBzdHlsZS5oZWlnaHQsIGRpc3BsYXk6IHN0eWxlLmRpc3BsYXkgfQogICAgICAgIH0KICAgICAgICByZXR1cm4geyBtYXRjaGVkLCBzdHlsZXMgfQogICAgICB9LCB7IHNlbGVjdG9yczogc2VsZWN0b3JzKGNsYXNzZXMpLCBpZHMgfSkKICAgICAgcmVzdWx0c1t2YXJpYW50XVtuYW1lXSA9IHJlc3VsdAogICAgICBhd2FpdCBwYWdlLmNsb3NlKCkKICAgIH0KICB9CiAgY29uc3QgZmFpbHVyZXMgPSBbXQogIGZvciAoY29uc3QgdmFyaWFudCBvZiBPYmplY3Qua2V5cyhyZXN1bHRzKSkgewogICAgY29uc3QgeyBiZWZvcmU6IGIsIGFmdGVyOiBhIH0gPSByZXN1bHRzW3ZhcmlhbnRdCiAgICBpZiAoSlNPTi5zdHJpbmdpZnkoYi5tYXRjaGVkLm9yaWdpbmFsKSAhPT0gSlNPTi5zdHJpbmdpZnkoYi5tYXRjaGVkLmNhbmRpZGF0ZSkpIHsKICAgICAgZmFpbHVyZXMucHVzaChgJHt2YXJpYW50fTogYmFzZWxpbmUgcGFnZSBtYXRjaGVkLm9yaWdpbmFsICE9IG1hdGNoZWQuY2FuZGlkYXRlYCkKICAgIH0KICAgIGlmIChKU09OLnN0cmluZ2lmeShhLm1hdGNoZWQub3JpZ2luYWwpICE9PSBKU09OLnN0cmluZ2lmeShhLm1hdGNoZWQuY2FuZGlkYXRlKSkgewogICAgICBmYWlsdXJlcy5wdXNoKGAke3ZhcmlhbnR9OiBjYW5kaWRhdGUgcGFnZSBtYXRjaGVkLm9yaWdpbmFsICE9IG1hdGNoZWQuY2FuZGlkYXRlYCkKICAgIH0KICAgIGlmIChKU09OLnN0cmluZ2lmeShiLm1hdGNoZWQpICE9PSBKU09OLnN0cmluZ2lmeShhLm1hdGNoZWQpKSB7CiAgICAgIGZhaWx1cmVzLnB1c2goYCR7dmFyaWFudH06IGJhc2VsaW5lL2NhbmRpZGF0ZSBtYXRjaGVkIHNldHMgZGlmZmVyYCkKICAgIH0KICAgIGZvciAoY29uc3QgaWQgb2YgaWRzKSB7CiAgICAgIGlmIChKU09OLnN0cmluZ2lmeShiLnN0eWxlc1tpZF0pICE9PSBKU09OLnN0cmluZ2lmeShhLnN0eWxlc1tpZF0pKSB7CiAgICAgICAgZmFpbHVyZXMucHVzaChgJHt2YXJpYW50fTogJHtpZH0gY29tcHV0ZWQgc3R5bGUgZGlmZmVyczogJHtKU09OLnN0cmluZ2lmeShiLnN0eWxlc1tpZF0pfSB2cyAke0pTT04uc3RyaW5naWZ5KGEuc3R5bGVzW2lkXSl9YCkKICAgICAgfQogICAgfQogICAgZm9yIChjb25zdCBbaWQsIG1hcmdpblRvcF0gb2YgT2JqZWN0LmVudHJpZXMoZXhwZWN0ZWRbdmFyaWFudF0pKSB7CiAgICAgIGlmIChhLnN0eWxlc1tpZF0ubWFyZ2luVG9wICE9PSBtYXJnaW5Ub3ApIHsKICAgICAgICBmYWlsdXJlcy5wdXNoKGAke3ZhcmlhbnR9OiAke2lkfSBleHBlY3RlZCBtYXJnaW5Ub3AgJHttYXJnaW5Ub3B9LCBnb3QgJHthLnN0eWxlc1tpZF0ubWFyZ2luVG9wfWApCiAgICAgIH0KICAgIH0KICB9CiAgY29uc3Qgc3VtbWFyeSA9IHsKICAgIGNocm9tZTogYnJvd3Nlci52ZXJzaW9uKCksCiAgICBiZWZvcmVDc3NTaGEyNTY6IGNyZWF0ZUhhc2goJ3NoYTI1NicpLnVwZGF0ZShiZWZvcmUuY3NzKS5kaWdlc3QoJ2hleCcpLAogICAgYWZ0ZXJDc3NTaGEyNTY6IGNyZWF0ZUhhc2goJ3NoYTI1NicpLnVwZGF0ZShhZnRlci5jc3MpLmRpZ2VzdCgnaGV4JyksCiAgICByZXN1bHRzLAogICAgZmFpbHVyZXMsCiAgICBlcXVhbDogZmFpbHVyZXMubGVuZ3RoID09PSAwLAogIH0KICBjb25zb2xlLmxvZyhKU09OLnN0cmluZ2lmeShzdW1tYXJ5KSkKICBpZiAoZmFpbHVyZXMubGVuZ3RoID4gMCkgcHJvY2Vzcy5leGl0Q29kZSA9IDEKfSBmaW5hbGx5IHsKICBhd2FpdCBicm93c2VyLmNsb3NlKCkKfQo='
+
   DIAG_BENCH_PATCH_B64: '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'
 
 jobs:
@@ -50,6 +57,7 @@ jobs:
           tested_tree=$(git rev-parse HEAD^{tree})
           tested_blob=$(git hash-object benchmarks/long-session-browser/long-session.bench.ts)
           tested_sha=$(sha256sum benchmarks/long-session-browser/long-session.bench.ts | cut -d' ' -f1)
+          css_sha=$(sha256sum packages/client/ui-chat/src/client/chat/ChatView.module.css | cut -d' ' -f1)
           diag_head='${{ github.sha }}'
           diag_tree=unavailable
           if git fetch --depth=1 origin "$diag_head" >/dev/null 2>&1; then
@@ -62,6 +70,7 @@ jobs:
             echo "tested_tree=$tested_tree"
             echo "tested_bench_blob=$tested_blob"
             echo "tested_bench_sha256=$tested_sha"
+            echo "tested_css_sha256=$css_sha"
             echo "started_at=$(date -u +%FT%TZ)"
             echo "image_os=${ImageOS:-unknown}"
             echo "image_version=${ImageVersion:-unknown}"
@@ -75,6 +84,7 @@ jobs:
           [ "$tested_tree" = "$TESTED_TREE" ] || { echo "tested tree drift" >&2; exit 1; }
           [ "$tested_blob" = "$TESTED_BENCH_BLOB" ] || { echo "benchmark blob drift" >&2; exit 1; }
           [ "$tested_sha" = "$TESTED_BENCH_SHA256" ] || { echo "benchmark source hash drift" >&2; exit 1; }
+          [ "$css_sha" = "$CSS_BEFORE_SHA256" ] || { echo "baseline CSS hash drift" >&2; exit 1; }
           sha256sum \
             benchmarks/long-session-browser/long-session.bench.ts \
             benchmarks/long-session-browser/synthetic-history.ts \
@@ -142,7 +152,7 @@ jobs:
           pnpm --filter @deepseek-ai/dsh-benchmarks exec playwright install --with-deps chromium 2>&1 | tee "$DIAG_DIR/browser-install.log"
           echo "status=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
 
-      - name: Build benchmark artifacts and Web shell (cloud only)
+      - name: Baseline build (original bench artifacts and Web shell)
         id: build
         continue-on-error: true
         run: |
@@ -155,18 +165,95 @@ jobs:
           [ "$build_status" = "0" ] && [ "$web_status" = "0" ]
           echo "status=$?" >> "$GITHUB_OUTPUT"
 
-      - name: Normal long-session-browser spec (3 samples)
-        id: bench
+      - name: Baseline long-session-browser spec (3 samples)
+        id: baseline
+        if: steps.build.outputs.status == '0' && steps.browser.outputs.status == '0'
         continue-on-error: true
         run: |
           set +e
           DSH_BENCH_REPORT_PHASE=all pnpm exec vitest run \
             --config vitest.bench.config.ts --no-file-parallelism --maxWorkers=1 \
             benchmarks/long-session-browser/long-session.bench.ts \
-            2>&1 | tee "$DIAG_DIR/normal-bench.log"
+            2>&1 | tee "$DIAG_DIR/baseline-bench.log"
           status=${PIPESTATUS[0]}
           echo "status=$status" >> "$GITHUB_OUTPUT"
-          if [ -d benchmarks/.dsh-report ]; then cp -R benchmarks/.dsh-report "$DIAG_DIR/normal-report"; fi
+          if [ -d benchmarks/.dsh-report ]; then cp -R benchmarks/.dsh-report "$DIAG_DIR/baseline-report"; fi
+
+      - name: Apply candidate CSS guard (cloud copy)
+        id: css_patch
+        if: steps.browser.outputs.status == '0'
+        run: |
+          set +e
+          printf '%s' "$CSS_PATCH_B64" | base64 -d > "$DIAG_DIR/css.patch"
+          status=$?
+          css_before=$(sha256sum packages/client/ui-chat/src/client/chat/ChatView.module.css | cut -d' ' -f1)
+          cp packages/client/ui-chat/src/client/chat/ChatView.module.css "$DIAG_DIR/css-before.css"
+          echo "css_before_sha256=$css_before" | tee -a "$DIAG_DIR/identity.txt"
+          if [ "$status" = "0" ] && [ "$css_before" = "$CSS_BEFORE_SHA256" ]; then
+            git apply --check "$DIAG_DIR/css.patch" && git apply "$DIAG_DIR/css.patch"
+            status=$?
+          else
+            status=1
+          fi
+          css_after=$(sha256sum packages/client/ui-chat/src/client/chat/ChatView.module.css | cut -d' ' -f1)
+          cp packages/client/ui-chat/src/client/chat/ChatView.module.css "$DIAG_DIR/css-after.css"
+          git diff -- packages/client/ui-chat/src/client/chat/ChatView.module.css > "$DIAG_DIR/css-applied.diff" || true
+          css_patch_sha=$(sha256sum "$DIAG_DIR/css.patch" | cut -d' ' -f1)
+          echo "css_after_sha256=$css_after" | tee -a "$DIAG_DIR/identity.txt"
+          echo "css_patch_sha256=$css_patch_sha" | tee -a "$DIAG_DIR/identity.txt"
+          [ "$css_patch_sha" = "$CSS_PATCH_SHA256" ] || status=1
+          [ "$css_after" = "$CSS_AFTER_SHA256" ] || status=1
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          exit "$status"
+
+      - name: Native CSS computed-margin helper (frozen author helper)
+        id: helper
+        if: steps.css_patch.outputs.status == '0'
+        continue-on-error: true
+        run: |
+          set +e
+          printf '%s' "$FLOW_HELPER_B64" | base64 -d > "$DIAG_DIR/compare-flow-css.mjs"
+          status=$?
+          helper_sha=$(sha256sum "$DIAG_DIR/compare-flow-css.mjs" | cut -d' ' -f1)
+          echo "flow_helper_sha256=$helper_sha" | tee -a "$DIAG_DIR/identity.txt"
+          [ "$helper_sha" = "$FLOW_HELPER_SHA256" ] || status=1
+          if [ "$status" = "0" ]; then
+            node "$DIAG_DIR/compare-flow-css.mjs" > "$DIAG_DIR/css-helper.json" 2> "$DIAG_DIR/css-helper.err"
+            status=$?
+          else
+            status=1
+          fi
+          echo "helper_status=$status" | tee -a "$DIAG_DIR/identity.txt"
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          exit "$status"
+
+      - name: Candidate rebuild after CSS guard
+        id: candidate_build
+        if: steps.build.outputs.status == '0' && steps.css_patch.outputs.status == '0'
+        continue-on-error: true
+        run: |
+          set +e
+          pnpm run build:bench 2>&1 | tee "$DIAG_DIR/candidate-build.log"
+          build_status=${PIPESTATUS[0]}
+          pnpm run build:web 2>&1 | tee -a "$DIAG_DIR/candidate-build.log"
+          web_status=${PIPESTATUS[0]}
+          echo "candidate_build_bench=$build_status candidate_build_web=$web_status" | tee -a "$DIAG_DIR/identity.txt"
+          [ "$build_status" = "0" ] && [ "$web_status" = "0" ]
+          echo "status=$?" >> "$GITHUB_OUTPUT"
+
+      - name: Candidate long-session-browser spec (3 samples)
+        id: candidate
+        if: steps.candidate_build.outputs.status == '0' && steps.browser.outputs.status == '0'
+        continue-on-error: true
+        run: |
+          set +e
+          DSH_BENCH_REPORT_PHASE=all pnpm exec vitest run \
+            --config vitest.bench.config.ts --no-file-parallelism --maxWorkers=1 \
+            benchmarks/long-session-browser/long-session.bench.ts \
+            2>&1 | tee "$DIAG_DIR/candidate-bench.log"
+          status=${PIPESTATUS[0]}
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          if [ -d benchmarks/.dsh-report ]; then cp -R benchmarks/.dsh-report "$DIAG_DIR/candidate-report"; fi
 
       - name: Upload bounded diagnostic artifacts
         if: always()
@@ -183,17 +270,36 @@ jobs:
           patch_status='${{ steps.patch.outputs.status }}'
           browser_status='${{ steps.browser.outputs.status }}'
           build_status='${{ steps.build.outputs.status }}'
-          bench_status='${{ steps.bench.outputs.status }}'
-          for entry in "patch:$patch_status" "browser:$browser_status" "build:$build_status" "bench:$bench_status"; do
+          baseline_status='${{ steps.baseline.outputs.status }}'
+          css_status='${{ steps.css_patch.outputs.status }}'
+          helper_status='${{ steps.helper.outputs.status }}'
+          candidate_build_status='${{ steps.candidate_build.outputs.status }}'
+          candidate_status='${{ steps.candidate.outputs.status }}'
+          for entry in \
+            "timeline-patch:$patch_status" \
+            "browser:$browser_status" \
+            "baseline-build:$build_status" \
+            "baseline-bench:$baseline_status" \
+            "css-patch:$css_status" \
+            "native-css-helper:$helper_status" \
+            "candidate-build:$candidate_build_status" \
+            "candidate-bench:$candidate_status"; do
             echo "${entry%%:*} exit=${entry#*:}"
             [ "${entry#*:}" = "0" ] || failed=1
           done
-          echo "The benchmark exit is observational; this diagnostic is not an acceptance gate."
+          echo "Baseline and candidate are separate 3-sample runs; never combine them into one 6-sample median."
+          echo "Baseline failure remains red but candidate diagnostics are retained; this is not an acceptance gate."
           cat "$DIAG_DIR/identity.txt"
-          echo "::group::normal bench log tail"
-          tail -160 "$DIAG_DIR/normal-bench.log" 2>/dev/null || true
-          echo "::endgroup::"
-          echo "::group::timeline diagnostics"
-          grep -E 'long-session-browser/timeline|long-session-browser/overlap-failure' "$DIAG_DIR/normal-bench.log" 2>/dev/null || true
+          for name in baseline candidate; do
+            echo "::group::${name} bench log tail"
+            tail -160 "$DIAG_DIR/${name}-bench.log" 2>/dev/null || true
+            echo "::endgroup::"
+            echo "::group::${name} timeline diagnostics"
+            grep -E 'long-session-browser/timeline|long-session-browser/overlap-failure' "$DIAG_DIR/${name}-bench.log" 2>/dev/null || true
+            echo "::endgroup::"
+          done
+          echo "::group::native CSS helper"
+          cat "$DIAG_DIR/css-helper.json" 2>/dev/null || true
+          tail -20 "$DIAG_DIR/css-helper.err" 2>/dev/null || true
           echo "::endgroup::"
           exit "$failed"
