@@ -1,8 +1,12 @@
 name: Fork coverage diagnostic
 
-# Push-only, single focused Linux diagnostic for the PR5 coverage failures.
-# The workflow is intentionally restricted to this diagnostic branch and has
-# read-only repository permissions; it does not open a PR or dispatch any gate.
+# Push-only, single Linux benchmark/profile diagnostic. The branch filter and
+# the read-only permission are the reviewed temporary diagnostic entry; this
+# variant runs the normal conversation-fold benchmark first and only then takes
+# separate Node CPU profiles. It is not a product candidate or a gate.
+# Publication target is the reviewed remote diagnostic ref
+# refs/heads/diagnostic/fork-coverage; this local worktree branch name is irrelevant.
+# Lead normal-FFs HEAD to that remote ref, which is the trigger below.
 on:
   push:
     branches: [diagnostic/fork-coverage]
@@ -16,14 +20,12 @@ concurrency:
 
 env:
   DSH_TELEMETRY_DISABLED: '1'
-  PRIMARY_NODE_VERSION: '24'
-  DSH_COVERAGE_TEST_TIMEOUT_MS: '90000'
-  DSH_COVERAGE_EXEMPT_HEAVY: '1'
+  PRIMARY_NODE_VERSION: '24.22.2'
 
 jobs:
-  focused:
+  bench-profile:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 25
     defaults:
       run:
         shell: bash
@@ -33,24 +35,33 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
-      - name: Record source facts
+      - name: Record source and environment facts
         run: |
-          DIAG="$RUNNER_TEMP/fork-coverage-diagnostic"
+          DIAG="$RUNNER_TEMP/fold-cpu-profile"
           mkdir -p "$DIAG"
           {
             echo "run_id=${{ github.run_id }}"
             echo "run_attempt=${{ github.run_attempt }}"
-            echo "workflow=${{ github.workflow }}"
             echo "ref=${{ github.ref }}"
             echo "head=$(git rev-parse HEAD)"
             echo "tree=$(git rev-parse HEAD^{tree})"
             echo "started_at=$(date -u +%FT%TZ)"
+            echo "image_os=${ImageOS:-unknown}"
+            echo "image_version=${ImageVersion:-unknown}"
+            echo "cpu_model=$(grep -m1 '^model name' /proc/cpuinfo | cut -d: -f2- | sed 's/^ //')"
+            echo "visible_cores=$(nproc)"
+            echo "cgroup_cpu_max=$(cat /sys/fs/cgroup/cpu.max 2>/dev/null || echo unreadable)"
+            echo "load_before=$(cat /proc/loadavg)"
           } | tee "$DIAG/meta.txt"
+          cp /proc/stat "$DIAG/proc-stat-before.txt"
           sha256sum \
-            .github/issue-management/policy.test.mjs \
-            packages/experimental/liveshare/tests/owner-credential-horizon.host.spec.ts \
-            apps/desktop/tests/windows-asar-unpack.spec.ts \
-            apps/desktop/scripts/verify-runtime-archive.ts \
+            benchmarks/conversation-fold/conversation-fold.worker.client.ts \
+            benchmarks/conversation-fold/conversation-fold.bench.client.ts \
+            packages/client/ui-chat/src/client/conversation-nodes/assistant.ts \
+            packages/client/ui-conversation/src/client/conversation/assembler.ts \
+            benchmarks/support/built-worker.ts \
+            benchmarks/tsdown.config.ts \
+            vitest.bench.config.ts \
             | tee -a "$DIAG/meta.txt"
           echo "DIAG_DIR=$DIAG" >> "$GITHUB_ENV"
 
@@ -65,82 +76,113 @@ jobs:
       - name: Install (immutable)
         run: pnpm install --frozen-lockfile
 
-      - name: Record locked tool versions
+      - name: Record tool versions
         run: |
-          set +e
-          builder_version=$(node -e 'const fs = require("node:fs"); const path = require("node:path"); const { createRequire } = require("node:module"); const req = createRequire(path.join(process.cwd(), "apps/desktop/package.json")); const p = req.resolve("app-builder-lib/package.json"); process.stdout.write(JSON.parse(fs.readFileSync(p, "utf8")).version)' 2>"$DIAG_DIR/builder-resolve.err")
-          builder_status=$?
           {
-            echo "pnpm=$(pnpm --version)"
             echo "node=$(node --version)"
-            if [ "$builder_status" -eq 0 ]; then
-              echo "builder=$builder_version"
-            else
-              echo "builder_resolve=error (see builder-resolve.err)"
-            fi
+            echo "pnpm=$(pnpm --version)"
           } | tee -a "$DIAG_DIR/meta.txt"
 
-      - name: Build native system (coverage gate dependency)
-        id: native
+      - name: Build benchmark artifacts (cloud only)
+        id: build
         continue-on-error: true
         run: |
           set +e
-          pnpm run build:native-system 2>&1 | tee "$DIAG_DIR/native-build.log"
-          status=${PIPESTATUS[0]}
-          echo "status=$status" >> "$GITHUB_OUTPUT"
+          pnpm run build:bench 2>&1 | tee "$DIAG_DIR/build.log"
+          echo "status=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
 
-      - name: Policy tests (fork CI environment)
-        id: policy
+      - name: Normal five-sample conversation-fold benchmark
+        id: normal
         continue-on-error: true
         run: |
           set +e
-          GITHUB_REPOSITORY=NBStarry/deepseek-harness \
-            node --test .github/issue-management/policy.test.mjs 2>&1 | tee "$DIAG_DIR/policy.log"
-          status=${PIPESTATUS[0]}
-          echo "status=$status" >> "$GITHUB_OUTPUT"
+          DSH_BENCH_REPORT_PHASE=last pnpm exec vitest run \
+            --config vitest.bench.config.ts --no-file-parallelism --maxWorkers=1 \
+            benchmarks/conversation-fold/conversation-fold.bench.client.ts \
+            2>&1 | tee "$DIAG_DIR/normal-bench.log"
+          echo "status=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+          if [ -d benchmarks/.dsh-report ]; then cp -R benchmarks/.dsh-report "$DIAG_DIR/normal-report"; fi
 
-      - name: Coverage-instrumented focused specs
-        id: focused
+      - name: Profile the original compiled worker (after the normal samples)
+        id: profile
         continue-on-error: true
         run: |
           set +e
-          pnpm exec vitest run --coverage --config vitest.config.ts \
-            --reporter=verbose --reporter=junit --outputFile="$DIAG_DIR/focused-junit.xml" \
-            apps/desktop/tests/windows-asar-unpack.spec.ts \
-            packages/experimental/liveshare/tests/owner-credential-horizon.host.spec.ts \
-            2>&1 | tee "$DIAG_DIR/focused-coverage.log"
-          status=${PIPESTATUS[0]}
-          echo "status=$status" >> "$GITHUB_OUTPUT"
+          worker="benchmarks/.dsh-build/conversation-fold/conversation-fold.worker.js"
+          profile_root="$DIAG_DIR/cpu-profile"
+          mkdir -p "$profile_root"
+          profile_failed=0
+          run_profile() {
+            local name="$1"
+            shift
+            local dir="$profile_root/$name"
+            mkdir -p "$dir"
+            node --expose-gc --cpu-prof --cpu-prof-dir="$dir" "$worker" "$@" \
+              > "$DIAG_DIR/profile-$name.stdout.json" 2> "$DIAG_DIR/profile-$name.stderr.log"
+            local status=$?
+            echo "$name exit=$status" | tee -a "$DIAG_DIR/profile-status.log"
+            [ "$status" = "0" ] || profile_failed=1
+          }
+          run_profile text-ordinary-16384 streaming text ordinary 262144 16384
+          run_profile reasoning-leading-whitespace-16384 streaming reasoning leading-whitespace 262144 16384
+          run_profile text-ordinary-4096 streaming text ordinary 262144 4096
+          run_profile reasoning-leading-whitespace-4096 streaming reasoning leading-whitespace 262144 4096
+          cp /proc/stat "$DIAG_DIR/proc-stat-after-profile.txt"
+          {
+            echo "profile_status=$profile_failed"
+            echo "load_after_profile=$(cat /proc/loadavg)"
+            echo "steal_ticks_before=$(awk '/^cpu /{print $9}' "$DIAG_DIR/proc-stat-before.txt")"
+            echo "steal_ticks_after=$(awk '/^cpu /{print $9}' "$DIAG_DIR/proc-stat-after-profile.txt")"
+            echo "finished_at=$(date -u +%FT%TZ)"
+          } | tee -a "$DIAG_DIR/meta.txt"
+          echo "status=$profile_failed" >> "$GITHUB_OUTPUT"
 
-      - name: Upload diagnostic logs
+      - name: Collect worker hashes and source maps
+        if: always()
+        run: |
+          worker_dir="$DIAG_DIR/worker"
+          mkdir -p "$worker_dir"
+          for file in benchmarks/.dsh-build/conversation-fold/conversation-fold.worker.js \
+                      benchmarks/.dsh-build/conversation-fold/conversation-fold.worker.js.map; do
+            [ -f "$file" ] || continue
+            cp "$file" "$worker_dir/"
+            sha256sum "$file" >> "$DIAG_DIR/worker-hashes.txt"
+          done
+          ls -la "$DIAG_DIR/worker" > "$DIAG_DIR/worker-listing.txt" 2>&1 || true
+
+      - name: Upload bounded diagnostic artifacts
         if: always()
         uses: actions/upload-artifact@v7.0.1
         with:
-          name: fork-coverage-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/fork-coverage-diagnostic
+          name: fold-cpu-profile-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/fold-cpu-profile
           retention-days: 14
 
-      - name: Report focused exits
+      - name: Report separate exits
         if: always()
         run: |
           failed=0
-          native_status='${{ steps.native.outputs.status }}'
-          policy_status='${{ steps.policy.outputs.status }}'
-          focused_status='${{ steps.focused.outputs.status }}'
-          for entry in "native:$native_status" "policy:$policy_status" "coverage:$focused_status"; do
+          build_status='${{ steps.build.outputs.status }}'
+          normal_status='${{ steps.normal.outputs.status }}'
+          profile_status='${{ steps.profile.outputs.status }}'
+          for entry in "build:$build_status" "normal:$normal_status"; do
             echo "${entry%%:*} exit=${entry#*:}"
             [ "${entry#*:}" = "0" ] || failed=1
           done
-          focused_summary=$(grep -o 'tests="[0-9]*" failures="[0-9]*" errors="[0-9]*"' "$DIAG_DIR/focused-junit.xml" 2>/dev/null | head -1 || true)
-          echo "focused_test_result=${focused_summary:-unavailable}"
-          if [ "$focused_status" != "0" ]; then
-            echo "coverage_aggregation=not-pass (focused subset; full per-file coverage thresholds not met; this is a diagnostic, not a gate pass)"
-          fi
-          grep -E 'ASAR_DESCRIPTOR_DIAG|ASAR_EXTRA_MEMBER_READ|ASAR_DESCRIPTOR_DIAG_ERROR' "$DIAG_DIR/focused-coverage.log" 2>/dev/null || true
+          echo "normal budget verdict uses the normal step exit above."
+          echo "profile observation exit=$profile_status (nonzero makes this diagnostic red; not a budget verdict)"
+          [ "$profile_status" = "0" ] || failed=1
+          echo "profile timings are for call localization only; they are not a budget verdict."
           cat "$DIAG_DIR/meta.txt"
-          for name in native-build policy focused-coverage; do
-            echo "::group::$name log"
-            tail -80 "$DIAG_DIR/$name.log" 2>/dev/null || true
-            echo "::endgroup::"
+          echo "::group::normal bench log tail"
+          tail -120 "$DIAG_DIR/normal-bench.log" 2>/dev/null || true
+          echo "::endgroup::"
+          echo "::group::profile status and stderr"
+          cat "$DIAG_DIR/profile-status.log" 2>/dev/null || true
+          for file in "$DIAG_DIR"/profile-*.stderr.log; do
+            [ -f "$file" ] || continue
+            echo "--- $file"
+            tail -20 "$file"
           done
+          echo "::endgroup::"
           exit "$failed"
