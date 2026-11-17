@@ -2,9 +2,9 @@ name: Fork coverage diagnostic
 
 # Push-only, single Linux browser-overlap diagnostic on the existing reviewed
 # diagnostic ref. The workflow head is the diagnostic commit; the measured
-# baseline is the explicit ff894/tree396 checkout. A failure-only patch is
-# applied to the cloud working copy, never committed. This is not a product
-# candidate and does not change any required budget or assertion.
+# baseline is the explicit ff894/tree396 checkout. A success/failure timeline
+# patch is applied only to the cloud working copy, never committed. This is not
+# a product candidate and does not change any required budget or assertion.
 on:
   push:
     branches: [diagnostic/fork-coverage]
@@ -23,6 +23,9 @@ env:
   TESTED_TREE: 39618f66d9dcd59c721de9e454888cdc4eeb779e
   TESTED_BENCH_SHA256: c83e6229fa2f5a39f2776c205d69eebe341ebc785bc2e57050e768009a1dfe98
   TESTED_BENCH_BLOB: 56fc53b60113a2ae5cbd6a45827e158563af3571
+  TESTED_BENCH_AFTER_SHA256: 21ebc43e3c9b38b90390257c6798a3d57be02f0705a987735fd8bb82dbbcaf74
+  PLANNED_PATCH_SHA256: a2da8a0766fb0254b2875f20c6bd4396ba7a3d4d71d9bc638306d26769056428
+  DIAG_BENCH_PATCH_B64: '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'
 
 jobs:
   browser-overlap:
@@ -101,59 +104,34 @@ jobs:
             echo "pnpm=$(pnpm --version)"
           } | tee -a "$DIAG_DIR/identity.txt"
 
-      - name: Apply failure-only diagnostic patch (cloud copy)
+      - name: Apply success/failure timeline diagnostic patch (cloud copy)
         id: patch
         run: |
           set +e
-          python3 - <<'PY' 2>&1 | tee "$DIAG_DIR/patch.log"
-          from pathlib import Path
-          import difflib, hashlib, os
-          path = Path('benchmarks/long-session-browser/long-session.bench.ts')
-          source = path.read_text()
-          before = path.read_bytes()
-          old = '          expectInputOverlap(inputOverlapped)\n'
-          new = "\n".join([
-            "          try {",
-            "            expectInputOverlap(inputOverlapped)",
-            "          } catch (error) {",
-            "            try {",
-            "              const failureWallMs = performance.now() - started",
-            "              const failureTaskMs = await taskMs(cdp) - beforeTask",
-            "              console.error(JSON.stringify({",
-            "                benchmark: 'long-session-browser/overlap-failure',",
-            "                sample,",
-            "                first,",
-            "                input,",
-            "                inputOverlapped,",
-            "                firstObservation,",
-            "                witness: await composer.getAttribute('data-benchmark-input-witness'),",
-            "                inputTiming: await composer.getAttribute('data-benchmark-input-timing'),",
-            "                failureWallMs,",
-            "                failureTaskMs,",
-            "                note: 'failure-partial after overlap assertion; not final streamTask/streamWall and not a budget verdict',",
-            "              }))",
-            "            } catch (diagnosticError) {",
-            "              console.error('long-session-browser failure diagnostic error', diagnosticError)",
-            "            }",
-            "            throw error",
-            "          }",
-          ]) + "\n"
-          count = source.count(old)
-          print('assertion_occurrences', count)
-          if count != 1:
-              raise SystemExit('expected exactly one overlap assertion, found %d' % count)
-          after = source.replace(old, new, 1)
-          path.write_text(after)
-          diff = ''.join(difflib.unified_diff(source.splitlines(keepends=True), after.splitlines(keepends=True), fromfile='long-session.bench.ts before', tofile='long-session.bench.ts after'))
-          Path(os.environ['DIAG_DIR'], 'patch.diff').write_text(diff)
-          print('before_sha256', hashlib.sha256(before).hexdigest())
-          print('after_sha256', hashlib.sha256(path.read_bytes()).hexdigest())
-          print('patch_sha256', hashlib.sha256(diff.encode()).hexdigest())
-          PY
-          status=${PIPESTATUS[0]}
+          set -o pipefail
+          printf '%s' "$DIAG_BENCH_PATCH_B64" | base64 -d | gzip -d > "$DIAG_DIR/planned.patch"
+          status=$?
+          before_sha=$(sha256sum benchmarks/long-session-browser/long-session.bench.ts | cut -d' ' -f1)
+          cp benchmarks/long-session-browser/long-session.bench.ts "$DIAG_DIR/bench-before.ts"
+          echo "bench_before_sha256=$before_sha" | tee -a "$DIAG_DIR/identity.txt"
+          if [ "$status" = "0" ] && [ "$before_sha" = "$TESTED_BENCH_SHA256" ]; then
+            git apply --check "$DIAG_DIR/planned.patch" && git apply "$DIAG_DIR/planned.patch"
+            status=$?
+          else
+            status=1
+          fi
+          after_sha=$(sha256sum benchmarks/long-session-browser/long-session.bench.ts | cut -d' ' -f1)
+          after_blob=$(git hash-object benchmarks/long-session-browser/long-session.bench.ts)
+          cp benchmarks/long-session-browser/long-session.bench.ts "$DIAG_DIR/bench-after.ts"
+          git diff -- benchmarks/long-session-browser/long-session.bench.ts > "$DIAG_DIR/applied.diff" || true
+          echo "bench_after_sha256=$after_sha" | tee -a "$DIAG_DIR/identity.txt"
+          echo "bench_blob_after_patch=$after_blob" | tee -a "$DIAG_DIR/identity.txt"
+          planned_sha=$(sha256sum "$DIAG_DIR/planned.patch" | cut -d' ' -f1)
+          echo "planned_patch_sha256=$planned_sha" | tee -a "$DIAG_DIR/identity.txt"
+          [ "$planned_sha" = "$PLANNED_PATCH_SHA256" ] || status=1
+          echo "applied_diff_sha256=$(sha256sum "$DIAG_DIR/applied.diff" | cut -d' ' -f1)" | tee -a "$DIAG_DIR/identity.txt"
+          [ "$after_sha" = "$TESTED_BENCH_AFTER_SHA256" ] || status=1
           echo "status=$status" >> "$GITHUB_OUTPUT"
-          before_blob=$(git hash-object benchmarks/long-session-browser/long-session.bench.ts)
-          echo "bench_blob_after_patch=$before_blob" | tee -a "$DIAG_DIR/identity.txt"
           exit "$status"
 
       - name: Install benchmark browser and hosted dependencies
@@ -212,11 +190,10 @@ jobs:
           done
           echo "The benchmark exit is observational; this diagnostic is not an acceptance gate."
           cat "$DIAG_DIR/identity.txt"
-          grep '^assertion_occurrences\|^before_sha256\|^after_sha256\|^patch_sha256' "$DIAG_DIR/patch.log" 2>/dev/null || true
           echo "::group::normal bench log tail"
           tail -160 "$DIAG_DIR/normal-bench.log" 2>/dev/null || true
           echo "::endgroup::"
-          echo "::group::failure diagnostics"
-          grep -F 'long-session-browser/overlap-failure' "$DIAG_DIR/normal-bench.log" 2>/dev/null || true
+          echo "::group::timeline diagnostics"
+          grep -E 'long-session-browser/timeline|long-session-browser/overlap-failure' "$DIAG_DIR/normal-bench.log" 2>/dev/null || true
           echo "::endgroup::"
           exit "$failed"
