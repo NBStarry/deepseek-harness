@@ -1,0 +1,146 @@
+name: Fork coverage diagnostic
+
+# Push-only, single focused Linux diagnostic for the PR5 coverage failures.
+# The workflow is intentionally restricted to this diagnostic branch and has
+# read-only repository permissions; it does not open a PR or dispatch any gate.
+on:
+  push:
+    branches: [diagnostic/fork-coverage]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fork-coverage-diagnostic-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  DSH_TELEMETRY_DISABLED: '1'
+  PRIMARY_NODE_VERSION: '24'
+  DSH_COVERAGE_TEST_TIMEOUT_MS: '90000'
+  DSH_COVERAGE_EXEMPT_HEAVY: '1'
+
+jobs:
+  focused:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Record source facts
+        run: |
+          DIAG="$RUNNER_TEMP/fork-coverage-diagnostic"
+          mkdir -p "$DIAG"
+          {
+            echo "run_id=${{ github.run_id }}"
+            echo "run_attempt=${{ github.run_attempt }}"
+            echo "workflow=${{ github.workflow }}"
+            echo "ref=${{ github.ref }}"
+            echo "head=$(git rev-parse HEAD)"
+            echo "tree=$(git rev-parse HEAD^{tree})"
+            echo "started_at=$(date -u +%FT%TZ)"
+          } | tee "$DIAG/meta.txt"
+          sha256sum \
+            .github/issue-management/policy.test.mjs \
+            packages/experimental/liveshare/tests/owner-credential-horizon.host.spec.ts \
+            apps/desktop/tests/windows-asar-unpack.spec.ts \
+            apps/desktop/scripts/verify-runtime-archive.ts \
+            | tee -a "$DIAG/meta.txt"
+          echo "DIAG_DIR=$DIAG" >> "$GITHUB_ENV"
+
+      - uses: pnpm/action-setup@v5.0.0
+        with:
+          dest: ${{ runner.temp }}/setup-pnpm-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: ${{ env.PRIMARY_NODE_VERSION }}
+
+      - name: Install (immutable)
+        run: pnpm install --frozen-lockfile
+
+      - name: Record locked tool versions
+        run: |
+          set +e
+          builder_version=$(node -e 'const fs = require("node:fs"); const path = require("node:path"); const { createRequire } = require("node:module"); const req = createRequire(path.join(process.cwd(), "apps/desktop/package.json")); const p = req.resolve("app-builder-lib/package.json"); process.stdout.write(JSON.parse(fs.readFileSync(p, "utf8")).version)' 2>"$DIAG_DIR/builder-resolve.err")
+          builder_status=$?
+          {
+            echo "pnpm=$(pnpm --version)"
+            echo "node=$(node --version)"
+            if [ "$builder_status" -eq 0 ]; then
+              echo "builder=$builder_version"
+            else
+              echo "builder_resolve=error (see builder-resolve.err)"
+            fi
+          } | tee -a "$DIAG_DIR/meta.txt"
+
+      - name: Build native system (coverage gate dependency)
+        id: native
+        continue-on-error: true
+        run: |
+          set +e
+          pnpm run build:native-system 2>&1 | tee "$DIAG_DIR/native-build.log"
+          status=${PIPESTATUS[0]}
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+
+      - name: Policy tests (fork CI environment)
+        id: policy
+        continue-on-error: true
+        run: |
+          set +e
+          GITHUB_REPOSITORY=NBStarry/deepseek-harness \
+            node --test .github/issue-management/policy.test.mjs 2>&1 | tee "$DIAG_DIR/policy.log"
+          status=${PIPESTATUS[0]}
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+
+      - name: Coverage-instrumented focused specs
+        id: focused
+        continue-on-error: true
+        run: |
+          set +e
+          pnpm exec vitest run --coverage --config vitest.config.ts \
+            --reporter=verbose --reporter=junit --outputFile="$DIAG_DIR/focused-junit.xml" \
+            apps/desktop/tests/windows-asar-unpack.spec.ts \
+            packages/experimental/liveshare/tests/owner-credential-horizon.host.spec.ts \
+            2>&1 | tee "$DIAG_DIR/focused-coverage.log"
+          status=${PIPESTATUS[0]}
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+
+      - name: Upload diagnostic logs
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: fork-coverage-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/fork-coverage-diagnostic
+          retention-days: 14
+
+      - name: Report focused exits
+        if: always()
+        run: |
+          failed=0
+          native_status='${{ steps.native.outputs.status }}'
+          policy_status='${{ steps.policy.outputs.status }}'
+          focused_status='${{ steps.focused.outputs.status }}'
+          for entry in "native:$native_status" "policy:$policy_status" "coverage:$focused_status"; do
+            echo "${entry%%:*} exit=${entry#*:}"
+            [ "${entry#*:}" = "0" ] || failed=1
+          done
+          focused_summary=$(grep -o 'tests="[0-9]*" failures="[0-9]*" errors="[0-9]*"' "$DIAG_DIR/focused-junit.xml" 2>/dev/null | head -1 || true)
+          echo "focused_test_result=${focused_summary:-unavailable}"
+          if [ "$focused_status" != "0" ]; then
+            echo "coverage_aggregation=not-pass (focused subset; full per-file coverage thresholds not met; this is a diagnostic, not a gate pass)"
+          fi
+          grep -E 'ASAR_DESCRIPTOR_DIAG|ASAR_EXTRA_MEMBER_READ|ASAR_DESCRIPTOR_DIAG_ERROR' "$DIAG_DIR/focused-coverage.log" 2>/dev/null || true
+          cat "$DIAG_DIR/meta.txt"
+          for name in native-build policy focused-coverage; do
+            echo "::group::$name log"
+            tail -80 "$DIAG_DIR/$name.log" 2>/dev/null || true
+            echo "::endgroup::"
+          done
+          exit "$failed"

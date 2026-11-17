@@ -1,4 +1,5 @@
 import { chmod, lstat, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -303,6 +304,54 @@ async function seal(input: Awaited<ReturnType<typeof fixture>>): Promise<Desktop
   return descriptor
 }
 
+function digest(bytes: Buffer): { bytes: number; sha256: string } {
+  return { bytes: bytes.byteLength, sha256: createHash('sha256').update(bytes).digest('hex') }
+}
+
+function differingFields(left: unknown, right: unknown): string[] {
+  if (typeof left !== 'object' || left === null || typeof right !== 'object' || right === null) return []
+  const leftRecord = left as Record<string, unknown>
+  const rightRecord = right as Record<string, unknown>
+  return [...new Set([...Object.keys(leftRecord), ...Object.keys(rightRecord)])]
+    .filter(key => JSON.stringify(leftRecord[key]) !== JSON.stringify(rightRecord[key]))
+    .sort()
+}
+
+/** Temporary diagnostic: print descriptor facts only after the original assertion fails. */
+async function logAsarDescriptorDiagnostic(
+  input: Awaited<ReturnType<typeof fixture>>,
+  expected: DesktopRuntimeDescriptor,
+): Promise<void> {
+  const expectedBytes = Buffer.from(`${JSON.stringify(expected, undefined, 2)}\n`)
+  const sourceBytes = await readFile(join(input.source, 'desktop-runtime.json'))
+  const archive = await readAsar(join(input.resources, 'app.asar'))
+  const archivedBytes = await archive.readFile(join('dsh', 'desktop-runtime.json'))
+  const extraArchivePath = join('dsh', 'extra.json')
+  let extraArchivePresent = false
+  try {
+    archive.getFile(extraArchivePath)
+    extraArchivePresent = true
+  } catch (error: unknown) {
+    console.error('ASAR_EXTRA_MEMBER_READ', error instanceof Error ? error.message : String(error))
+  }
+  const extraSourceBytes = await readFile(join(input.source, 'extra.json'))
+  const expectedJson: unknown = JSON.parse(expectedBytes.toString('utf8'))
+  const archivedJson: unknown = JSON.parse(archivedBytes.toString('utf8'))
+  console.error('ASAR_DESCRIPTOR_DIAG', JSON.stringify({
+    platform: process.platform,
+    arch: process.arch,
+    expected: digest(expectedBytes),
+    source: digest(sourceBytes),
+    archived: digest(archivedBytes),
+    expectedEqualsSource: expectedBytes.equals(sourceBytes),
+    archivedEqualsExpected: archivedBytes.equals(expectedBytes),
+    expectedVsArchivedDifferingTopLevelFields: differingFields(expectedJson, archivedJson),
+    extraArchivePath,
+    extraArchivePresent,
+    extraSource: digest(extraSourceBytes),
+  }))
+}
+
 it('verifies archived bytes against the preparation descriptor', async () => {
   const input = await fixture(false)
   const expected = await seal(input)
@@ -328,7 +377,18 @@ it.each(['missing', 'extra'] as const)('rejects %s archived files', async (state
   if (state === 'missing') await rm(join(input.source, 'node_modules/foo/companion.json'))
   else await writeFile(join(input.source, 'extra.json'), '{}')
   await packageFixture(input)
-  await expect(verifyRuntimeArchive(join(input.resources, 'app.asar'), expected)).rejects.toThrow('ASAR integrity')
+  try {
+    await expect(verifyRuntimeArchive(join(input.resources, 'app.asar'), expected)).rejects.toThrow('ASAR integrity')
+  } catch (error: unknown) {
+    if (state === 'extra') {
+      try {
+        await logAsarDescriptorDiagnostic(input, expected)
+      } catch (diagnosticError: unknown) {
+        console.error('ASAR_DESCRIPTOR_DIAG_ERROR', diagnosticError instanceof Error ? diagnosticError.message : String(diagnosticError))
+      }
+    }
+    throw error
+  }
 })
 
 it.each(['directory', 'extra'] as const)('rejects an unpacked %s without a matching file record', async (state) => {
