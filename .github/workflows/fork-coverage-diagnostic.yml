@@ -1,12 +1,10 @@
 name: Fork coverage diagnostic
 
-# Push-only, single Linux benchmark/profile diagnostic. The branch filter and
-# the read-only permission are the reviewed temporary diagnostic entry; this
-# variant runs the normal conversation-fold benchmark first and only then takes
-# separate Node CPU profiles. It is not a product candidate or a gate.
-# Publication target is the reviewed remote diagnostic ref
-# refs/heads/diagnostic/fork-coverage; this local worktree branch name is irrelevant.
-# Lead normal-FFs HEAD to that remote ref, which is the trigger below.
+# Push-only, single Linux browser-overlap diagnostic on the existing reviewed
+# diagnostic ref. The workflow head is the diagnostic commit; the measured
+# baseline is the explicit ff894/tree396 checkout. A failure-only patch is
+# applied to the cloud working copy, never committed. This is not a product
+# candidate and does not change any required budget or assertion.
 on:
   push:
     branches: [diagnostic/fork-coverage]
@@ -21,30 +19,46 @@ concurrency:
 env:
   DSH_TELEMETRY_DISABLED: '1'
   PRIMARY_NODE_VERSION: '24.22.2'
+  TESTED_HEAD: ff894d3e27b85011f609c50f5deef4e4570341e5
+  TESTED_TREE: 39618f66d9dcd59c721de9e454888cdc4eeb779e
+  TESTED_BENCH_SHA256: c83e6229fa2f5a39f2776c205d69eebe341ebc785bc2e57050e768009a1dfe98
+  TESTED_BENCH_BLOB: 56fc53b60113a2ae5cbd6a45827e158563af3571
 
 jobs:
-  bench-profile:
+  browser-overlap:
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     defaults:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@v7.0.1
+      - name: Checkout measured baseline (explicit ff894)
+        uses: actions/checkout@v7.0.1
         with:
+          ref: ff894d3e27b85011f609c50f5deef4e4570341e5
           fetch-depth: 1
           persist-credentials: false
 
-      - name: Record source and environment facts
+      - name: Record dual identity and fail closed on drift
         run: |
-          DIAG="$RUNNER_TEMP/fold-cpu-profile"
+          DIAG="$RUNNER_TEMP/long-session-overlap"
           mkdir -p "$DIAG"
+          tested_head=$(git rev-parse HEAD)
+          tested_tree=$(git rev-parse HEAD^{tree})
+          tested_blob=$(git hash-object benchmarks/long-session-browser/long-session.bench.ts)
+          tested_sha=$(sha256sum benchmarks/long-session-browser/long-session.bench.ts | cut -d' ' -f1)
+          diag_head='${{ github.sha }}'
+          diag_tree=unavailable
+          if git fetch --depth=1 origin "$diag_head" >/dev/null 2>&1; then
+            diag_tree=$(git rev-parse "$diag_head^{tree}" 2>/dev/null || echo unavailable)
+          fi
           {
-            echo "run_id=${{ github.run_id }}"
-            echo "run_attempt=${{ github.run_attempt }}"
-            echo "ref=${{ github.ref }}"
-            echo "head=$(git rev-parse HEAD)"
-            echo "tree=$(git rev-parse HEAD^{tree})"
+            echo "diag_head=$diag_head"
+            echo "diag_tree=$diag_tree"
+            echo "tested_head=$tested_head"
+            echo "tested_tree=$tested_tree"
+            echo "tested_bench_blob=$tested_blob"
+            echo "tested_bench_sha256=$tested_sha"
             echo "started_at=$(date -u +%FT%TZ)"
             echo "image_os=${ImageOS:-unknown}"
             echo "image_version=${ImageVersion:-unknown}"
@@ -52,17 +66,21 @@ jobs:
             echo "visible_cores=$(nproc)"
             echo "cgroup_cpu_max=$(cat /sys/fs/cgroup/cpu.max 2>/dev/null || echo unreadable)"
             echo "load_before=$(cat /proc/loadavg)"
-          } | tee "$DIAG/meta.txt"
-          cp /proc/stat "$DIAG/proc-stat-before.txt"
+            echo "tested_worktree_after_failure_patch_is_exact_396=false"
+          } | tee "$DIAG/identity.txt"
+          [ "$tested_head" = "$TESTED_HEAD" ] || { echo "tested HEAD drift" >&2; exit 1; }
+          [ "$tested_tree" = "$TESTED_TREE" ] || { echo "tested tree drift" >&2; exit 1; }
+          [ "$tested_blob" = "$TESTED_BENCH_BLOB" ] || { echo "benchmark blob drift" >&2; exit 1; }
+          [ "$tested_sha" = "$TESTED_BENCH_SHA256" ] || { echo "benchmark source hash drift" >&2; exit 1; }
           sha256sum \
-            benchmarks/conversation-fold/conversation-fold.worker.client.ts \
-            benchmarks/conversation-fold/conversation-fold.bench.client.ts \
-            packages/client/ui-chat/src/client/conversation-nodes/assistant.ts \
-            packages/client/ui-conversation/src/client/conversation/assembler.ts \
-            benchmarks/support/built-worker.ts \
-            benchmarks/tsdown.config.ts \
+            benchmarks/long-session-browser/long-session.bench.ts \
+            benchmarks/long-session-browser/synthetic-history.ts \
+            apps/web/tests/scaffold.ts \
+            apps/web/tests/support.ts \
+            benchmarks/support/calibration.ts \
             vitest.bench.config.ts \
-            | tee -a "$DIAG/meta.txt"
+            | tee -a "$DIAG/identity.txt"
+          cp /proc/stat "$DIAG/proc-stat-before.txt"
           echo "DIAG_DIR=$DIAG" >> "$GITHUB_ENV"
 
       - uses: pnpm/action-setup@v5.0.0
@@ -81,108 +99,124 @@ jobs:
           {
             echo "node=$(node --version)"
             echo "pnpm=$(pnpm --version)"
-          } | tee -a "$DIAG_DIR/meta.txt"
+          } | tee -a "$DIAG_DIR/identity.txt"
 
-      - name: Build benchmark artifacts (cloud only)
+      - name: Apply failure-only diagnostic patch (cloud copy)
+        id: patch
+        run: |
+          set +e
+          python3 - <<'PY' 2>&1 | tee "$DIAG_DIR/patch.log"
+          from pathlib import Path
+          import difflib, hashlib, os
+          path = Path('benchmarks/long-session-browser/long-session.bench.ts')
+          source = path.read_text()
+          before = path.read_bytes()
+          old = '          expectInputOverlap(inputOverlapped)\n'
+          new = "\n".join([
+            "          try {",
+            "            expectInputOverlap(inputOverlapped)",
+            "          } catch (error) {",
+            "            try {",
+            "              const failureWallMs = performance.now() - started",
+            "              const failureTaskMs = await taskMs(cdp) - beforeTask",
+            "              console.error(JSON.stringify({",
+            "                benchmark: 'long-session-browser/overlap-failure',",
+            "                sample,",
+            "                first,",
+            "                input,",
+            "                inputOverlapped,",
+            "                firstObservation,",
+            "                witness: await composer.getAttribute('data-benchmark-input-witness'),",
+            "                inputTiming: await composer.getAttribute('data-benchmark-input-timing'),",
+            "                failureWallMs,",
+            "                failureTaskMs,",
+            "                note: 'failure-partial after overlap assertion; not final streamTask/streamWall and not a budget verdict',",
+            "              }))",
+            "            } catch (diagnosticError) {",
+            "              console.error('long-session-browser failure diagnostic error', diagnosticError)",
+            "            }",
+            "            throw error",
+            "          }",
+          ]) + "\n"
+          count = source.count(old)
+          print('assertion_occurrences', count)
+          if count != 1:
+              raise SystemExit('expected exactly one overlap assertion, found %d' % count)
+          after = source.replace(old, new, 1)
+          path.write_text(after)
+          diff = ''.join(difflib.unified_diff(source.splitlines(keepends=True), after.splitlines(keepends=True), fromfile='long-session.bench.ts before', tofile='long-session.bench.ts after'))
+          Path(os.environ['DIAG_DIR'], 'patch.diff').write_text(diff)
+          print('before_sha256', hashlib.sha256(before).hexdigest())
+          print('after_sha256', hashlib.sha256(path.read_bytes()).hexdigest())
+          print('patch_sha256', hashlib.sha256(diff.encode()).hexdigest())
+          PY
+          status=${PIPESTATUS[0]}
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          before_blob=$(git hash-object benchmarks/long-session-browser/long-session.bench.ts)
+          echo "bench_blob_after_patch=$before_blob" | tee -a "$DIAG_DIR/identity.txt"
+          exit "$status"
+
+      - name: Install benchmark browser and hosted dependencies
+        id: browser
+        continue-on-error: true
+        run: |
+          set +e
+          pnpm --filter @deepseek-ai/dsh-benchmarks exec playwright install --with-deps chromium 2>&1 | tee "$DIAG_DIR/browser-install.log"
+          echo "status=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+
+      - name: Build benchmark artifacts and Web shell (cloud only)
         id: build
         continue-on-error: true
         run: |
           set +e
           pnpm run build:bench 2>&1 | tee "$DIAG_DIR/build.log"
-          echo "status=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+          build_status=${PIPESTATUS[0]}
+          pnpm run build:web 2>&1 | tee -a "$DIAG_DIR/build.log"
+          web_status=${PIPESTATUS[0]}
+          echo "build_bench=$build_status build_web=$web_status" | tee -a "$DIAG_DIR/identity.txt"
+          [ "$build_status" = "0" ] && [ "$web_status" = "0" ]
+          echo "status=$?" >> "$GITHUB_OUTPUT"
 
-      - name: Normal five-sample conversation-fold benchmark
-        id: normal
+      - name: Normal long-session-browser spec (3 samples)
+        id: bench
         continue-on-error: true
         run: |
           set +e
-          DSH_BENCH_REPORT_PHASE=last pnpm exec vitest run \
+          DSH_BENCH_REPORT_PHASE=all pnpm exec vitest run \
             --config vitest.bench.config.ts --no-file-parallelism --maxWorkers=1 \
-            benchmarks/conversation-fold/conversation-fold.bench.client.ts \
+            benchmarks/long-session-browser/long-session.bench.ts \
             2>&1 | tee "$DIAG_DIR/normal-bench.log"
-          echo "status=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+          status=${PIPESTATUS[0]}
+          echo "status=$status" >> "$GITHUB_OUTPUT"
           if [ -d benchmarks/.dsh-report ]; then cp -R benchmarks/.dsh-report "$DIAG_DIR/normal-report"; fi
-
-      - name: Profile the original compiled worker (after the normal samples)
-        id: profile
-        continue-on-error: true
-        run: |
-          set +e
-          worker="benchmarks/.dsh-build/conversation-fold/conversation-fold.worker.js"
-          profile_root="$DIAG_DIR/cpu-profile"
-          mkdir -p "$profile_root"
-          profile_failed=0
-          run_profile() {
-            local name="$1"
-            shift
-            local dir="$profile_root/$name"
-            mkdir -p "$dir"
-            node --expose-gc --cpu-prof --cpu-prof-dir="$dir" "$worker" "$@" \
-              > "$DIAG_DIR/profile-$name.stdout.json" 2> "$DIAG_DIR/profile-$name.stderr.log"
-            local status=$?
-            echo "$name exit=$status" | tee -a "$DIAG_DIR/profile-status.log"
-            [ "$status" = "0" ] || profile_failed=1
-          }
-          run_profile text-ordinary-16384 streaming text ordinary 262144 16384
-          run_profile reasoning-leading-whitespace-16384 streaming reasoning leading-whitespace 262144 16384
-          run_profile text-ordinary-4096 streaming text ordinary 262144 4096
-          run_profile reasoning-leading-whitespace-4096 streaming reasoning leading-whitespace 262144 4096
-          cp /proc/stat "$DIAG_DIR/proc-stat-after-profile.txt"
-          {
-            echo "profile_status=$profile_failed"
-            echo "load_after_profile=$(cat /proc/loadavg)"
-            echo "steal_ticks_before=$(awk '/^cpu /{print $9}' "$DIAG_DIR/proc-stat-before.txt")"
-            echo "steal_ticks_after=$(awk '/^cpu /{print $9}' "$DIAG_DIR/proc-stat-after-profile.txt")"
-            echo "finished_at=$(date -u +%FT%TZ)"
-          } | tee -a "$DIAG_DIR/meta.txt"
-          echo "status=$profile_failed" >> "$GITHUB_OUTPUT"
-
-      - name: Collect worker hashes and source maps
-        if: always()
-        run: |
-          worker_dir="$DIAG_DIR/worker"
-          mkdir -p "$worker_dir"
-          for file in benchmarks/.dsh-build/conversation-fold/conversation-fold.worker.js \
-                      benchmarks/.dsh-build/conversation-fold/conversation-fold.worker.js.map; do
-            [ -f "$file" ] || continue
-            cp "$file" "$worker_dir/"
-            sha256sum "$file" >> "$DIAG_DIR/worker-hashes.txt"
-          done
-          ls -la "$DIAG_DIR/worker" > "$DIAG_DIR/worker-listing.txt" 2>&1 || true
 
       - name: Upload bounded diagnostic artifacts
         if: always()
         uses: actions/upload-artifact@v7.0.1
         with:
-          name: fold-cpu-profile-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/fold-cpu-profile
+          name: long-session-overlap-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/long-session-overlap
           retention-days: 14
 
       - name: Report separate exits
         if: always()
         run: |
           failed=0
+          patch_status='${{ steps.patch.outputs.status }}'
+          browser_status='${{ steps.browser.outputs.status }}'
           build_status='${{ steps.build.outputs.status }}'
-          normal_status='${{ steps.normal.outputs.status }}'
-          profile_status='${{ steps.profile.outputs.status }}'
-          for entry in "build:$build_status" "normal:$normal_status"; do
+          bench_status='${{ steps.bench.outputs.status }}'
+          for entry in "patch:$patch_status" "browser:$browser_status" "build:$build_status" "bench:$bench_status"; do
             echo "${entry%%:*} exit=${entry#*:}"
             [ "${entry#*:}" = "0" ] || failed=1
           done
-          echo "normal budget verdict uses the normal step exit above."
-          echo "profile observation exit=$profile_status (nonzero makes this diagnostic red; not a budget verdict)"
-          [ "$profile_status" = "0" ] || failed=1
-          echo "profile timings are for call localization only; they are not a budget verdict."
-          cat "$DIAG_DIR/meta.txt"
+          echo "The benchmark exit is observational; this diagnostic is not an acceptance gate."
+          cat "$DIAG_DIR/identity.txt"
+          grep '^assertion_occurrences\|^before_sha256\|^after_sha256\|^patch_sha256' "$DIAG_DIR/patch.log" 2>/dev/null || true
           echo "::group::normal bench log tail"
-          tail -120 "$DIAG_DIR/normal-bench.log" 2>/dev/null || true
+          tail -160 "$DIAG_DIR/normal-bench.log" 2>/dev/null || true
           echo "::endgroup::"
-          echo "::group::profile status and stderr"
-          cat "$DIAG_DIR/profile-status.log" 2>/dev/null || true
-          for file in "$DIAG_DIR"/profile-*.stderr.log; do
-            [ -f "$file" ] || continue
-            echo "--- $file"
-            tail -20 "$file"
-          done
+          echo "::group::failure diagnostics"
+          grep -F 'long-session-browser/overlap-failure' "$DIAG_DIR/normal-bench.log" 2>/dev/null || true
           echo "::endgroup::"
           exit "$failed"
