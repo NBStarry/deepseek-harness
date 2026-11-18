@@ -34,14 +34,14 @@ Eligible PRs need at least one same-repository Issue reference, exactly one cano
 - Resolving references use closing keywords such as `Fixes #123`, `Closes #123`, or `Resolves #123`. Only references that resolve to actual Issues require Project reads during validation. A PR Priority must match the highest resolving-Issue Priority; a resolving PR with a Priority label requires every resolving Issue to have Priority. If all resolving Priorities are empty, the PR may omit Priority.
 - References inside HTML comments, code fences, or inline code do not count. Cross-repository references and references to PRs do not satisfy the Issue requirement.
 
-REST reads use the repository `GITHUB_TOKEN`. Project validation uses a separate App token with Issues and organization Projects read permissions. Missing required Project access or invalid field configuration fails validation rather than bypassing resolving-Issue Priority checks.
+REST reads use the repository `GITHUB_TOKEN` and the event repository: a pull request in a personal fork validates its own Issues and labels. The configured Project and its App token belong to the upstream repository, so a fork skips Project reads and rejects resolving references with guidance to use informational `Refs #N`; it still enforces the same-repository Issue reference and label rules. Project validation uses a separate App token with Issues and organization Projects read permissions. Missing required Project access or invalid field configuration fails validation rather than bypassing resolving-Issue Priority checks.
 
 -----
 
 <a id="lifecycle-events"></a>
 ## Lifecycle events
 
-[Issue lifecycle](../workflows/issue-lifecycle.yml) mutates Project data independently of PR validation eligibility. PR opened/reopened events and body edits can advance resolving Issues to `In progress`; title-only edits do not. Review requests target `In review`. Changes-requested reviews target `In progress`, with the [human-ownership and terminal-status protections](../../.agents/notes/implemented/process/2026-08-10-event-directed-pr-review-status.md).
+[Issue lifecycle](../workflows/issue-lifecycle.yml) mutates Project data independently of PR validation eligibility and runs only in the upstream repository; a personal fork runs no lifecycle work and requests no upstream App credentials. PR opened/reopened events and body edits can advance resolving Issues to `In progress`; title-only edits do not. Review requests target `In review`. Changes-requested reviews target `In progress`, with the [human-ownership and terminal-status protections](../../.agents/notes/implemented/process/2026-08-10-event-directed-pr-review-status.md).
 
 Approval-only and comment-only reviews do not allocate a lifecycle runner. PR pushes and label changes, and Issue assignment changes, do not trigger lifecycle work. Other subscribed Issue events maintain membership, state, and audit comments; exact subscriptions live in the workflow.
 

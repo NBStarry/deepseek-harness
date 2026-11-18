@@ -38,6 +38,14 @@ jobs:
   # in-house pool's readiness is re-proven on every master push by the
   # serial-linux-selfhosted standby lane in ci-master.yml. Native Windows jobs
   # and their separate DSH_CI_FAILOVER_WINDOWS switch live in ci-windows.yml.
+  #
+  # FORKS: the enterprise pools are provisioned for the internal upstream
+  # repository named below, which is the repository this workflow's own
+  # predicates and runner groups cover. Every other repository (a fork, or the
+  # public source mirror) resolves the default branch of each expression to a
+  # GitHub-hosted Linux runner instead, so no required job waits for a label
+  # its repository will never have. The failover values above stay available
+  # as an explicit opt-in for whichever repository sets the variable.
   node-24:
     if: github.event_name == 'pull_request'
     runs-on: >-
@@ -45,7 +53,7 @@ jobs:
           || vars.DSH_CI_FAILOVER_LINUX == 'selfhosted'
           && github.event.pull_request.user.login != 'dependabot[bot]'
           && fromJSON('["self-hosted", "linux", "x64", "vm-backup"]')
-          || 'dsh-ubuntu-24-04-16core' }}
+          || (github.repository == 'deepseek-harness/deepseek-harness' && 'dsh-ubuntu-24-04-16core' || 'ubuntu-24.04') }}
     name: node 24 / static
     env:
       # Shared hosts expose host CPUs, not an isolated allocation.
@@ -112,7 +120,7 @@ jobs:
           || vars.DSH_CI_FAILOVER_LINUX == 'selfhosted'
           && github.event.pull_request.user.login != 'dependabot[bot]'
           && fromJSON('["self-hosted", "linux", "x64", "vm-backup"]')
-          || 'dsh-ubuntu-24-04-16core' }}
+          || (github.repository == 'deepseek-harness/deepseek-harness' && 'dsh-ubuntu-24-04-16core' || 'ubuntu-24.04') }}
     name: node 24 / coverage
     env:
       # Shared hosts expose host CPUs, not an isolated allocation.
@@ -213,7 +221,7 @@ jobs:
           || vars.DSH_CI_FAILOVER_LINUX == 'selfhosted'
           && github.event.pull_request.user.login != 'dependabot[bot]'
           && fromJSON('["self-hosted", "linux", "x64", "vm-backup"]')
-          || 'dsh-ubuntu-24-04-16core' }}
+          || (github.repository == 'deepseek-harness/deepseek-harness' && 'dsh-ubuntu-24-04-16core' || 'ubuntu-24.04') }}
     name: node 24 / lint
     env:
       # Shared hosts expose host CPUs, not an isolated allocation.
@@ -338,7 +346,7 @@ jobs:
           || vars.DSH_CI_FAILOVER_LINUX == 'selfhosted'
           && github.event.pull_request.user.login != 'dependabot[bot]'
           && fromJSON('["self-hosted", "linux", "x64", "vm-backup"]')
-          || 'dsh-ubuntu-24-04-16core' }}
+          || (github.repository == 'deepseek-harness/deepseek-harness' && 'dsh-ubuntu-24-04-16core' || 'ubuntu-24.04') }}
     name: node 24 / snapshots and artifacts
     env:
       # Shared hosts expose host CPUs, not an isolated allocation.

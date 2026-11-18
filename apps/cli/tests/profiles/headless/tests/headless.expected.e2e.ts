@@ -53,6 +53,12 @@ const headlessFailureExpected = join(goldensDir, 'headless-profile', 'stderr.exp
 const refreshing = process.env.DSH_SNAPSHOT === 'refresh'
 /** The shipped base bundle's title output cap, which marks a title request's `max_tokens`. */
 const TITLE_MAX_TOKENS = 4096
+/** Heartbeat comments the shared defaults mock sends before an ordinary response. */
+const DEFAULTS_HEARTBEATS = 3
+/** Extended comment budget selected only by the provider-comments case. */
+const EXTENDED_HEARTBEATS = 24
+/** Interval between the shared defaults mock's heartbeat comments. */
+const DEFAULTS_HEARTBEAT_MS = 60
 
 interface JsonObject {
   [key: string]: unknown
@@ -75,6 +81,8 @@ interface DeepSeekDefaultsServer {
   readonly url: string
   readonly requests: JsonObject[]
   readonly paths: string[]
+  /** Epoch milliseconds when each request finished arriving, for failure diagnostics only. */
+  readonly requestedAt?: number[]
   close(): Promise<void>
 }
 
@@ -98,10 +106,11 @@ async function expectHeadlessStream(normalized: string, expectedPath: string): P
 
 /** Serve one deterministic DeepSeek-compatible response while retaining its request body. */
 async function deepseekDefaultsServer(
-  options: { waitForTitleRequest?: boolean; piAiCompatibility?: true } = {},
+  options: { waitForTitleRequest?: boolean; piAiCompatibility?: true; heartbeats?: number } = {},
 ): Promise<DeepSeekDefaultsServer> {
   const requests: JsonObject[] = []
   const paths: string[] = []
+  const requestedAt: number[] = []
   const server = createServer((request: IncomingMessage, response: ServerResponse) => {
     let body = ''
     request.setEncoding('utf8')
@@ -109,14 +118,19 @@ async function deepseekDefaultsServer(
     request.on('end', () => {
       requests.push(JSON.parse(body) as JsonObject)
       paths.push(request.url ?? '')
+      requestedAt.push(Date.now())
       response.writeHead(200, { 'content-type': 'text/event-stream' })
-      let keepAlives = 3
+      // The provider-comments case opts into the extended budget: 24 comments at
+      // 60 ms keep the stream active for ~1.4 s before the ~1.5 s response, leaving
+      // margin above its 1000 ms idle window. Other callers keep the ordinary
+      // three-comment/240 ms response expected by their own configurations.
+      let keepAlives = options.heartbeats ?? DEFAULTS_HEARTBEATS
       const write = (): void => {
         // One-shot teardown may cancel background title work after the main response.
         if (keepAlives-- > 0
           || (options.waitForTitleRequest === true && !requests.some(isTitleRequest))) {
           response.write(': keep-alive\n\n')
-          timer = setTimeout(write, 60)
+          timer = setTimeout(write, DEFAULTS_HEARTBEAT_MS)
           return
         }
         if (options.piAiCompatibility !== true) {
@@ -137,7 +151,7 @@ async function deepseekDefaultsServer(
           '',
         ].join('\n\n'))
       }
-      let timer = setTimeout(write, 60)
+      let timer = setTimeout(write, DEFAULTS_HEARTBEAT_MS)
       response.once('close', () => { clearTimeout(timer) })
     })
   })
@@ -148,6 +162,7 @@ async function deepseekDefaultsServer(
     url: `http://127.0.0.1:${address.port}`,
     requests,
     paths,
+    requestedAt,
     close: () => new Promise(resolve => server.close(() => { resolve() })),
   }
 }
@@ -837,7 +852,7 @@ describe('headless stream-json snapshots', () => {
   }, LOADER_SMOKE_TEST_TIMEOUT_MS)
 
   it('keeps provider comments alive and sends DeepSeek defaults through the one-shot app', async () => {
-    const server = await deepseekDefaultsServer()
+    const server = await deepseekDefaultsServer({ heartbeats: EXTENDED_HEARTBEATS })
     try {
       const result = await runLoaderSmoke({
         label: 'DeepSeek adapter defaults headless stream-json snapshot',
@@ -860,6 +875,49 @@ describe('headless stream-json snapshots', () => {
       })
 
       expect(result.stderr).toBe('')
+      if (server.requests.length !== 2) {
+        // Failure-only diagnostics: classify requests without printing prompts, credentials, or headers.
+        const started = server.requestedAt?.[0]
+        console.error('HEADLESS_DEFAULTS_REQUEST_DIAG', JSON.stringify({
+          count: server.requests.length,
+          requests: server.requests.map((request, index) => {
+            const at = server.requestedAt?.[index]
+            return {
+              index,
+              isTitle: isTitleRequest(request),
+              maxTokens: request.max_tokens,
+              model: request.model,
+              stream: request.stream,
+              messageCount: Array.isArray(request.messages) ? request.messages.length : null,
+              path: server.paths[index],
+              atMs: started === undefined || at === undefined ? null : at - started,
+            }
+          }),
+        }))
+        const retry = parseJsonl(result.stdout)
+          .map(record => record.event)
+          .filter((event): event is JsonObject => (
+            event !== null
+            && typeof event === 'object'
+            && !Array.isArray(event)
+            && 'type' in event
+            && (event.type === 'llm/retry' || event.type === 'llm/retry-started')
+          ))
+          .map((event) => {
+            const data = event.data as JsonObject | undefined
+            const failure = data?.failure as JsonObject | undefined
+            return {
+              type: event.type,
+              code: typeof failure?.code === 'string' ? failure.code : null,
+              // Fixed whitelist comparison; the message itself is never emitted.
+              idleTimeout: failure?.message === 'DeepSeek Messages stream idle timeout',
+              mode: typeof data?.mode === 'string' ? data.mode : null,
+              delayMs: typeof data?.delayMs === 'number' ? data.delayMs : null,
+              policyKey: typeof data?.policyKey === 'string' ? data.policyKey : null,
+            }
+          })
+        console.error('HEADLESS_DEFAULTS_RETRY_DIAG', JSON.stringify({ retry }))
+      }
       expect(server.requests).toHaveLength(2)
       expect(server.paths).toEqual(['/v1/messages', '/v1/messages'])
       const agentRequest = server.requests.find(request => request.max_tokens === 256_000)
@@ -904,8 +962,9 @@ describe('headless stream-json snapshots', () => {
       try {
         const decoder = new TextDecoder()
         let body = ''
-        // Four heartbeats cross the ordinary fixture's three-heartbeat response.
-        while (body.split(': keep-alive\n\n').length < 5) {
+        // Cross the ordinary three-comment window before the title request;
+        // the fixture must keep commenting past its normal end.
+        while (body.split(': keep-alive\n\n').length < DEFAULTS_HEARTBEATS + 2) {
           const chunk = await reader.read()
           expect(chunk.done).toBe(false)
           body += decoder.decode(chunk.value)

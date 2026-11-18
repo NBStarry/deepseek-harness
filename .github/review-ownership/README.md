@@ -4,9 +4,14 @@
 
 The [`weighted-approval` workflow](../workflows/weighted-approval.yml) publishes an approval score for branch rules. Reviewers are chosen manually; an eligible delegation command requests review from its recipient.
 
+## Personal fork owner confirmation
+
+The `NBStarry/deepseek-harness` fork disables the weighted-approval publisher and its review-event workflow through a repository guard; the fork publishes no weighted status or decision, converts no missing status into success or approval, and does not rewrite existing weighted statuses on older heads. Before merging to that fork's master, its owner confirms the exact candidate commit SHA with the complete scope and known risks after all required technical checks have passed; non-blocking or observational results (for example Windows coverage) remain recorded but are not treated as passed or as merge prerequisites. Any new head, including a merge-forward or conflict resolution, invalidates the previous confirmation and requires a new one. This confirmation is a manual release process, not a GitHub-enforced branch lock: it does not auto-merge, does not substitute for technical checks, and does not pre-approve any commit. Other repositories, including `deepseek-harness/deepseek-harness`, keep the weighted approval policy unchanged; this policy changes no branch protection or repository permission.
+
 ## Table of Contents
 
 - [Approval scoring](#approval-scoring)
+- [Personal fork owner confirmation](#personal-fork-owner-confirmation)
 - [Delegating points](#delegating-points)
 - [Security](#security)
 - [Verification](#verification)

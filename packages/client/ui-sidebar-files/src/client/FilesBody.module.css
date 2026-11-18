@@ -73,13 +73,15 @@
 }
 
 /* Covered content stays laid out but cannot receive keyboard focus. */
-:has(> .navigator.fill) > :not(.navigator) {
+.navigator.fill ~ :not(.navigator),
+:not(.navigator):has(~ .navigator.fill) {
   visibility: hidden;
 }
 
 /* navigator-layout `FULLSCREEN_QUERY`: every layout fills the row. */
 @media (width < 768px) {
-  :has(> .navigator:not(.wholePage)) > :not(.navigator) {
+  .navigator:not(.wholePage) ~ :not(.navigator),
+  :not(.navigator):has(~ .navigator:not(.wholePage)) {
     visibility: hidden;
   }
 

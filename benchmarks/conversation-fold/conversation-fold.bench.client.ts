@@ -56,10 +56,15 @@ const PREPARING_CASES = [
 
 const STREAMING_CHARACTERS = 256 * 1024
 const STREAMING_SAMPLES = 5
-/** Reference-machine expectations; shared CI scaling applies only to elapsed time. */
+/**
+ * Streaming-group endpoint ceilings authorized by the benchmark calibration
+ * note: 40 ms at 4,096 and 110 ms at 16,384 fragments. Text and reasoning
+ * share each ceiling; all other endpoints keep the shared scale/headroom.
+ * See [the calibration note](../../.agents/notes/implemented/testing/2026-11-17-conversation-fold-streaming-endpoint-recalibration.md).
+ */
 const STREAMING_WORKLOADS = [
-  { fragments: 4_096, expectedMs: 12 },
-  { fragments: 16_384, expectedMs: 32 },
+  { fragments: 4_096, expectedMs: 12, ciBudgetMs: 40 },
+  { fragments: 16_384, expectedMs: 32, ciBudgetMs: 110 },
 ] as const
 const STREAMING_CASES = STREAMING_WORKLOADS.flatMap(workload => [
   { ...workload, blockType: 'text', pattern: 'ordinary' },
@@ -161,7 +166,7 @@ describe('live Assistant text publication', () => {
     }
     const median = samples.toSorted((a, b) => a.elapsedMs - b.elapsedMs)[Math.floor(STREAMING_SAMPLES / 2)]!
     const retainedMb = samples.map(sample => sample.retainedMb).toSorted((a, b) => a - b)[Math.floor(STREAMING_SAMPLES / 2)]!
-    const budgetMs = ciTimeBudget(workload.expectedMs)
+    const budgetMs = workload.ciBudgetMs
     const budgetMb = EXPECTED_STREAMING_RETAINED_MB * PERFORMANCE_BUDGET_HEADROOM
     const benchmarkCase: BenchmarkCase = {
       id: `conversation-fold/streaming-${workload.blockType}-${workload.pattern}-${String(workload.fragments)}`,

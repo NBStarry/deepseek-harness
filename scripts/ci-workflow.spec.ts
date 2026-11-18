@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { runInNewContext } from 'node:vm'
 import * as yaml from 'js-yaml'
@@ -586,14 +586,15 @@ describe('CI workflow', () => {
       linuxAggregate: aggregate['runs-on'] as string,
       windows: windowsBuild['runs-on'] as string,
     }
-    const evaluate = (expression: string, vars: Record<string, string>, login = 'maintainer'): unknown => {
+    const evaluate = (expression: string, vars: Record<string, string>, login = 'maintainer',
+      repository = 'deepseek-harness/deepseek-harness'): unknown => {
       return evaluateRunsOn(expression, {
         vars,
         fromJSON: JSON.parse,
-        github: { event: { pull_request: { user: { login } } } },
+        github: { repository, event: { pull_request: { user: { login } } } },
       })
     }
-    for (const [name, selector, variable, pool, hosted] of [
+    for (const [name, selector, variable, pool, upstreamDefault] of [
       ['linux gates', selectors.linux, 'DSH_CI_FAILOVER_LINUX', ['self-hosted', 'linux', 'x64', 'vm-backup'], 'dsh-ubuntu-24-04-16core'],
       ['linux aggregate', selectors.linuxAggregate, 'DSH_CI_FAILOVER_LINUX', ['self-hosted', 'linux', 'x64', 'vm-backup'], 'ubuntu-latest'],
       ['windows lanes', selectors.windows, 'DSH_CI_FAILOVER_WINDOWS', ['self-hosted', 'dsh-win-ci', 'windows'], 'dsh-windows-2025-16core'],
@@ -602,10 +603,46 @@ describe('CI workflow', () => {
       expect(evaluate(selector, { [variable]: 'selfhosted' }), `${name} selfhosted value`).toEqual(pool)
       // The blacksmith branch must not capture the selfhosted pool, and the
       // dependabot exclusion applies to the pool, not to the blacksmith tier.
-      expect(evaluate(selector, { [variable]: 'selfhosted' }, 'dependabot[bot]'), `${name} dependabot on selfhosted`).toBe(hosted)
+      expect(evaluate(selector, { [variable]: 'selfhosted' }, 'dependabot[bot]'), `${name} dependabot on selfhosted`).toBe(upstreamDefault)
       for (const mode of ['', 'hosted', 'unexpected']) {
-        expect(evaluate(selector, { [variable]: mode }), `${name} default on ${mode}`).toBe(hosted)
+        expect(evaluate(selector, { [variable]: mode }), `${name} default on ${mode}`).toBe(upstreamDefault)
       }
+    }
+
+    // The enterprise pools are provisioned only for the internal upstream
+    // repository that this tree's own release predicates already name
+    // (`deepseek-harness/deepseek-harness`). Any other repository — a fork, or
+    // the public source mirror — resolves the same required selectors to
+    // GitHub-hosted runners, or every gate queues forever on a label that
+    // repository cannot have. The aggregate stays on its hosted verdict image.
+    for (const repository of ['NBStarry/deepseek-harness', 'deepseek-ai/deepseek-harness']) {
+      for (const [name, selector, hosted] of [
+        ['linux gates', selectors.linux, 'ubuntu-24.04'],
+        ['linux aggregate', selectors.linuxAggregate, 'ubuntu-latest'],
+        ['windows lanes', selectors.windows, 'windows-2025'],
+      ] as const) {
+        expect(evaluate(selector, {}, 'maintainer', repository), `${name} default outside upstream`).toBe(hosted)
+      }
+    }
+
+    // Every selector that names an enterprise pool must keep the
+    // upstream-repository branch, so a new required job cannot silently
+    // reintroduce fork-wide indefinite queueing.
+    for (const [file, enterprise, hosted] of [
+      ['.github/workflows/ci.yml', 'dsh-ubuntu-24-04-16core', 'ubuntu-24.04'],
+      ['.github/workflows/ci-windows.yml', 'dsh-windows-2025-16core', 'windows-2025'],
+    ] as const) {
+      const jobs = loadWorkflow(file).jobs
+      if (!isRecord(jobs)) throw new TypeError(`${file} must define jobs`)
+      let guarded = 0
+      for (const [jobName, job] of Object.entries(jobs)) {
+        if (!isRecord(job) || typeof job['runs-on'] !== 'string' || !job['runs-on'].includes(enterprise)) continue
+        guarded += 1
+        expect(job['runs-on'], `${file} ${jobName} must gate ${enterprise} on the upstream repository`)
+          .toContain("github.repository == 'deepseek-harness/deepseek-harness'")
+        expect(evaluate(job['runs-on'], {}, 'maintainer', 'NBStarry/deepseek-harness'), `${file} ${jobName} fork runner`).toBe(hosted)
+      }
+      expect(guarded, `${file} must keep at least one ${enterprise} lane`).toBeGreaterThan(0)
     }
 
     // The run-gates aggregate lanes stop at the first blocking gate failure so
@@ -1429,10 +1466,11 @@ describe('Weighted approval workflow', () => {
       'cancel-in-progress': false,
     })
     expect(job).toMatchObject({
-      if: "(github.event_name != 'pull_request_target' || github.event.pull_request.state == 'open') && "
+      if: "github.repository != 'NBStarry/deepseek-harness' && "
+        + "((github.event_name != 'pull_request_target' || github.event.pull_request.state == 'open') && "
         + "(github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success') && "
         + "(github.event_name != 'issue_comment' || (github.event.issue.pull_request && github.event.issue.state == 'open' &&\n"
-        + "  (contains(github.event.comment.body, '/delegate') || contains(github.event.changes.body.from, '/delegate'))))",
+        + "  (contains(github.event.comment.body, '/delegate') || contains(github.event.changes.body.from, '/delegate')))))",
       name: 'weighted approval publisher',
       'runs-on': 'ubuntu-latest',
       'timeout-minutes': 5,
@@ -1494,7 +1532,7 @@ describe('Weighted approval workflow', () => {
       run: 'node .github/review-ownership/check-approval.mjs',
     })
     expect(recordJob).toMatchObject({
-      if: "github.event.pull_request.state == 'open'",
+      if: "github.repository != 'NBStarry/deepseek-harness' && (github.event.pull_request.state == 'open')",
       name: 'record weighted approval review event',
       'runs-on': 'ubuntu-latest',
       'timeout-minutes': 2,
@@ -1507,6 +1545,43 @@ describe('Weighted approval workflow', () => {
     expect(JSON.stringify(reviewEvent)).not.toContain('github.token')
     expect(JSON.stringify(reviewEvent)).not.toContain('secrets.')
   })
+
+  it('disables weighted approval on the personal fork without touching other repositories or technical CI', () => {
+    const guard = "github.repository != 'NBStarry/deepseek-harness'"
+    const publisher = loadWorkflow('.github/workflows/weighted-approval.yml')
+    const reviewEvent = loadWorkflow('.github/workflows/weighted-approval-review-event.yml')
+    const publishJob = workflowJob(publisher, 'publish-status')
+    const recordJob = workflowJob(reviewEvent, 'record-review-event')
+    if (typeof publishJob.if !== 'string' || typeof recordJob.if !== 'string') {
+      throw new TypeError('weighted approval jobs must define conditions')
+    }
+    expect(publishJob.if.startsWith(`${guard} && ((`)).toBe(true)
+    expect(recordJob.if.startsWith(`${guard} && (`)).toBe(true)
+    // The guard reads the base repository, never a pull-request head, so a PR
+    // from a personal fork into the upstream repository still runs its check.
+    expect(JSON.stringify({ publisher, reviewEvent })).not.toContain('head.repo')
+    expect(JSON.stringify({ publisher, reviewEvent })).not.toContain('pull_request.head')
+
+    const workflowDirectory = resolve(root, '.github/workflows')
+    const scoringWorkflows = readdirSync(workflowDirectory)
+      .filter(name => name.endsWith('.yml'))
+      .filter(name => readFileSync(resolve(workflowDirectory, name), 'utf8').includes('check-approval.mjs'))
+    expect(scoringWorkflows).toEqual(['weighted-approval.yml'])
+    for (const file of ['ci.yml', 'ci-windows.yml', 'ci-python.yml']) {
+      expect(readFileSync(resolve(workflowDirectory, file), 'utf8')).not.toContain(guard)
+    }
+
+    const readme = readFileSync(resolve(root, '.github/review-ownership/README.md'), 'utf8')
+    expect(readme).toContain('Personal fork owner confirmation')
+    expect(readme).toContain('exact candidate commit SHA')
+    expect(readme).toContain('Any new head')
+    expect(readme).toContain('not a GitHub-enforced branch lock')
+    expect(readme).toContain('publishes no weighted status or decision')
+    expect(readme).toContain('does not rewrite existing weighted statuses')
+    expect(readme).toContain('all required technical checks have passed')
+    expect(readme).toContain('non-blocking or observational results')
+    expect(readme).toContain('not treated as passed or as merge prerequisites')
+  })
 })
 
 describe('Issue lifecycle workflow', () => {
@@ -1518,6 +1593,7 @@ describe('Issue lifecycle workflow', () => {
 
     expect(lifecycle.on).toHaveProperty('pull_request')
     expect(lifecycle.on).toHaveProperty('pull_request_review')
+    expect(lifecycleJob.if).toContain("github.repository == 'deepseek-harness/deepseek-harness'")
     expect(lifecycleJob.if).toContain("github.event.review.state == 'changes_requested'")
     expect(lifecycleJob.if).toContain('github.event.changes.body != null')
     // Keep the subscription-type gates: issue-lifecycle does not re-subscribe
@@ -1565,7 +1641,7 @@ describe('Issue lifecycle workflow', () => {
 
     expect(tokenStep).toMatchObject({
       id: 'app-token',
-      if: "${{ steps.preflight.outputs.needs-project == 'true' }}",
+      if: "${{ steps.preflight.outputs.needs-project == 'true' && github.repository == 'deepseek-harness/deepseek-harness' }}",
       uses: 'actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1',
       with: {
         'client-id': '${{ vars.DSH_ISSUE_APP_CLIENT_ID }}',

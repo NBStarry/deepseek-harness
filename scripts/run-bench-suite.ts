@@ -18,6 +18,7 @@ export const SERIAL_BENCH_FILES = [
   // Request-history budgets 297 ms against a 212 ms healthy median; a sibling
   // pushed it to 342 ms.
   'benchmarks/agent-continuation/agent-continuation.bench.ts',
+  'benchmarks/terminal-io/terminal-io.bench.ts',
 ] as const
 
 const CONFIG = ['--config', 'vitest.bench.config.ts'] as const
