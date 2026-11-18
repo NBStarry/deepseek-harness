@@ -1,7 +1,7 @@
 name: Fork coverage diagnostic
 
-# Single ff894 baseline plus the frozen 148 full style-trace patch.
-# This is diagnostic-only; it is not a product configuration or acceptance gate.
+# FilesBody navigator fix paired diagnostic: one ff894 baseline and one same-job
+# candidate differing only by the reviewed FilesBody CSS patch. No trace/Profiler.
 on:
   push:
     branches: [diagnostic/fork-coverage]
@@ -19,13 +19,16 @@ env:
   TESTED_HEAD: ff894d3e27b85011f609c50f5deef4e4570341e5
   TESTED_TREE: 39618f66d9dcd59c721de9e454888cdc4eeb779e
   TESTED_BENCH_SHA256: c83e6229fa2f5a39f2776c205d69eebe341ebc785bc2e57050e768009a1dfe98
+  TESTED_BENCH_AFTER_SHA256: 773c94844fe5680cb30ef432b41f68fcd20d651addd46992227f8de5d891f51e
   TESTED_BENCH_BLOB: 56fc53b60113a2ae5cbd6a45827e158563af3571
-  BASELINE_CSS_SHA256: ed939e63d6e6479b7b240a79c3231ade8c32f55235002ac33fc6a085e0497b60
-  STYLE_TRACE_BROWSER_VERSION: '149.0.7827.55'
-  TESTED_BENCH_AFTER_SHA256: bc85f68ac9853f9c2d6d7af33b01e751a2506b9036e4a2d83bdc20a68ffd0cc7
-  STYLE_TRACE_HELPER_SHA256: 76b0512168cd793092d3513859255107c9b0be7b889800b5fedaafc078cefdda
-  PLANNED_PATCH_SHA256: 927a4cc65105470e524a8df99fde4e0fba27e36f3005910b8c3eb5b6eb8cbbbe
-  DIAG_BENCH_PATCH_B64: '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'
+  PLANNED_PATCH_SHA256: f84acac63d0c11d3536d44a8cbec8f8b739a8811db13082c01550cad87266d9f
+  FILESBODY_BEFORE_SHA256: b412321d7d82be7273349831335f3748723ee9ee083999387615131825b35c2b
+  FILESBODY_AFTER_SHA256: 6aca876af6bd4e91a1f13c757ec3cd223383abefde51b92a5660ac05ade5a43b
+  FILESBODY_PATCH_SHA256: 7a6808def007f3b920e11c977f28854bc6067e750bc1bb22682ba7f5147291a5
+  CHATVIEW_CSS_SHA256: ed939e63d6e6479b7b240a79c3231ade8c32f55235002ac33fc6a085e0497b60
+  LOCK_SHA256: 6dbb7b4d0117aa2a69d19e348cb22e2b46eba5b11af146ab24b7a2bcc3a9b86c
+  DIAG_BENCH_PATCH_B64: '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'
+  FILESBODY_PATCH_B64: 'ZGlmZiAtLWdpdCBhL3BhY2thZ2VzL2NsaWVudC91aS1zaWRlYmFyLWZpbGVzL3NyYy9jbGllbnQvRmlsZXNCb2R5Lm1vZHVsZS5jc3MgYi9wYWNrYWdlcy9jbGllbnQvdWktc2lkZWJhci1maWxlcy9zcmMvY2xpZW50L0ZpbGVzQm9keS5tb2R1bGUuY3NzCmluZGV4IGMyNTBjNWQ0Li44NGM0NjRjNSAxMDA2NDQKLS0tIGEvcGFja2FnZXMvY2xpZW50L3VpLXNpZGViYXItZmlsZXMvc3JjL2NsaWVudC9GaWxlc0JvZHkubW9kdWxlLmNzcworKysgYi9wYWNrYWdlcy9jbGllbnQvdWktc2lkZWJhci1maWxlcy9zcmMvY2xpZW50L0ZpbGVzQm9keS5tb2R1bGUuY3NzCkBAIC03MywxMyArNzMsMTUgQEAKIH0KIAogLyogQ292ZXJlZCBjb250ZW50IHN0YXlzIGxhaWQgb3V0IGJ1dCBjYW5ub3QgcmVjZWl2ZSBrZXlib2FyZCBmb2N1cy4gKi8KLTpoYXMoPiAubmF2aWdhdG9yLmZpbGwpID4gOm5vdCgubmF2aWdhdG9yKSB7CisubmF2aWdhdG9yLmZpbGwgfiA6bm90KC5uYXZpZ2F0b3IpLAorOm5vdCgubmF2aWdhdG9yKTpoYXMofiAubmF2aWdhdG9yLmZpbGwpIHsKICAgdmlzaWJpbGl0eTogaGlkZGVuOwogfQogCiAvKiBuYXZpZ2F0b3ItbGF5b3V0IGBGVUxMU0NSRUVOX1FVRVJZYDogZXZlcnkgbGF5b3V0IGZpbGxzIHRoZSByb3cuICovCiBAbWVkaWEgKHdpZHRoIDwgNzY4cHgpIHsKLSAgOmhhcyg+IC5uYXZpZ2F0b3I6bm90KC53aG9sZVBhZ2UpKSA+IDpub3QoLm5hdmlnYXRvcikgeworICAubmF2aWdhdG9yOm5vdCgud2hvbGVQYWdlKSB+IDpub3QoLm5hdmlnYXRvciksCisgIDpub3QoLm5hdmlnYXRvcik6aGFzKH4gLm5hdmlnYXRvcjpub3QoLndob2xlUGFnZSkpIHsKICAgICB2aXNpYmlsaXR5OiBoaWRkZW47CiAgIH0KIAo='
 
 jobs:
   browser-overlap:
@@ -50,7 +53,9 @@ jobs:
           tested_tree=$(git rev-parse HEAD^{tree})
           tested_blob=$(git hash-object benchmarks/long-session-browser/long-session.bench.ts)
           tested_sha=$(sha256sum benchmarks/long-session-browser/long-session.bench.ts | cut -d' ' -f1)
-          tested_css=$(sha256sum packages/client/ui-chat/src/client/chat/ChatView.module.css | cut -d' ' -f1)
+          filesbody_sha=$(sha256sum packages/client/ui-sidebar-files/src/client/FilesBody.module.css | cut -d' ' -f1)
+          chatview_sha=$(sha256sum packages/client/ui-chat/src/client/chat/ChatView.module.css | cut -d' ' -f1)
+          lock_sha=$(sha256sum pnpm-lock.yaml | cut -d' ' -f1)
           diag_head='${{ github.sha }}'
           diag_tree=unavailable
           if git fetch --depth=1 origin "$diag_head" >/dev/null 2>&1; then
@@ -63,7 +68,9 @@ jobs:
             echo "tested_tree=$tested_tree"
             echo "tested_bench_blob=$tested_blob"
             echo "tested_bench_sha256=$tested_sha"
-            echo "tested_css_sha256=$tested_css"
+            echo "filesbody_css_before_sha256=$filesbody_sha"
+            echo "chatview_css_sha256=$chatview_sha"
+            echo "pnpm_lock_sha256=$lock_sha"
             echo "started_at=$(date -u +%FT%TZ)"
             echo "image_os=${ImageOS:-unknown}"
             echo "image_version=${ImageVersion:-unknown}"
@@ -77,7 +84,9 @@ jobs:
           [ "$tested_tree" = "$TESTED_TREE" ] || { echo "tested tree drift" >&2; exit 1; }
           [ "$tested_blob" = "$TESTED_BENCH_BLOB" ] || { echo "benchmark blob drift" >&2; exit 1; }
           [ "$tested_sha" = "$TESTED_BENCH_SHA256" ] || { echo "benchmark source hash drift" >&2; exit 1; }
-          [ "$tested_css" = "$BASELINE_CSS_SHA256" ] || { echo "baseline CSS hash drift" >&2; exit 1; }
+          [ "$filesbody_sha" = "$FILESBODY_BEFORE_SHA256" ] || { echo "FilesBody baseline CSS drift" >&2; exit 1; }
+          [ "$chatview_sha" = "$CHATVIEW_CSS_SHA256" ] || { echo "ChatView CSS drift" >&2; exit 1; }
+          [ "$lock_sha" = "$LOCK_SHA256" ] || { echo "lockfile drift" >&2; exit 1; }
           sha256sum \
             benchmarks/long-session-browser/long-session.bench.ts \
             benchmarks/long-session-browser/synthetic-history.ts \
@@ -107,39 +116,32 @@ jobs:
             echo "pnpm=$(pnpm --version)"
           } | tee -a "$DIAG_DIR/identity.txt"
 
-      - name: Apply frozen full style-trace patch (cloud copy)
+      - name: Apply reviewed benchmark diagnostics patch (cloud copy)
         id: patch
         run: |
           set +e
           set -o pipefail
-          printf '%s' "$DIAG_BENCH_PATCH_B64" | base64 -d | gzip -d > "$DIAG_DIR/planned.patch"
+          printf '%s' "$DIAG_BENCH_PATCH_B64" | base64 -d | gzip -d > "$DIAG_DIR/bench.patch"
           status=$?
           before_sha=$(sha256sum benchmarks/long-session-browser/long-session.bench.ts | cut -d' ' -f1)
           cp benchmarks/long-session-browser/long-session.bench.ts "$DIAG_DIR/bench-before.ts"
-          echo "bench_before_sha256=$before_sha" | tee -a "$DIAG_DIR/identity.txt"
           if [ "$status" = "0" ] && [ "$before_sha" = "$TESTED_BENCH_SHA256" ]; then
-            git apply --check "$DIAG_DIR/planned.patch" && git apply "$DIAG_DIR/planned.patch"
+            git apply --check "$DIAG_DIR/bench.patch" && git apply "$DIAG_DIR/bench.patch"
             status=$?
           else
             status=1
           fi
           after_sha=$(sha256sum benchmarks/long-session-browser/long-session.bench.ts | cut -d' ' -f1)
-          helper_sha=$(sha256sum benchmarks/long-session-browser/style-trace.ts | cut -d' ' -f1)
           after_blob=$(git hash-object benchmarks/long-session-browser/long-session.bench.ts)
           cp benchmarks/long-session-browser/long-session.bench.ts "$DIAG_DIR/bench-after.ts"
-          cp benchmarks/long-session-browser/style-trace.ts "$DIAG_DIR/style-trace.ts"
-          git diff -- benchmarks/long-session-browser > "$DIAG_DIR/applied.diff" || true
-          planned_sha=$(sha256sum "$DIAG_DIR/planned.patch" | cut -d' ' -f1)
+          git diff -- benchmarks/long-session-browser > "$DIAG_DIR/bench-applied.diff" || true
+          bench_patch_sha=$(sha256sum "$DIAG_DIR/bench.patch" | cut -d' ' -f1)
+          echo "bench_before_sha256=$before_sha" | tee -a "$DIAG_DIR/identity.txt"
           echo "bench_after_sha256=$after_sha" | tee -a "$DIAG_DIR/identity.txt"
-          echo "style_trace_helper_sha256=$helper_sha" | tee -a "$DIAG_DIR/identity.txt"
           echo "bench_blob_after_patch=$after_blob" | tee -a "$DIAG_DIR/identity.txt"
-          echo "planned_patch_sha256=$planned_sha" | tee -a "$DIAG_DIR/identity.txt"
-          [ "$planned_sha" = "$PLANNED_PATCH_SHA256" ] || status=1
+          echo "bench_patch_sha256=$bench_patch_sha" | tee -a "$DIAG_DIR/identity.txt"
+          [ "$bench_patch_sha" = "$PLANNED_PATCH_SHA256" ] || status=1
           [ "$after_sha" = "$TESTED_BENCH_AFTER_SHA256" ] || status=1
-          [ "$helper_sha" = "$STYLE_TRACE_HELPER_SHA256" ] || status=1
-          css_after=$(sha256sum packages/client/ui-chat/src/client/chat/ChatView.module.css | cut -d' ' -f1)
-          echo "css_after_patch_sha256=$css_after" | tee -a "$DIAG_DIR/identity.txt"
-          [ "$css_after" = "$BASELINE_CSS_SHA256" ] || status=1
           echo "status=$status" >> "$GITHUB_OUTPUT"
           exit "$status"
 
@@ -151,82 +153,165 @@ jobs:
           pnpm --filter @deepseek-ai/dsh-benchmarks exec playwright install --with-deps chromium 2>&1 | tee "$DIAG_DIR/browser-install.log"
           echo "status=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
 
-      - name: Build benchmark artifacts and Web shell
-        id: build
+      - name: Baseline build (bench artifacts and Web shell)
+        id: baseline_build
         continue-on-error: true
         run: |
           set +e
-          pnpm run build:bench 2>&1 | tee "$DIAG_DIR/build.log"
+          pnpm run build:bench 2>&1 | tee "$DIAG_DIR/baseline-build.log"
           build_status=${PIPESTATUS[0]}
-          pnpm run build:web 2>&1 | tee -a "$DIAG_DIR/build.log"
+          pnpm run build:web 2>&1 | tee -a "$DIAG_DIR/baseline-build.log"
           web_status=${PIPESTATUS[0]}
-          echo "build_bench=$build_status build_web=$web_status" | tee -a "$DIAG_DIR/identity.txt"
+          echo "baseline_build_bench=$build_status baseline_build_web=$web_status" | tee -a "$DIAG_DIR/identity.txt"
           [ "$build_status" = "0" ] && [ "$web_status" = "0" ]
           echo "status=$?" >> "$GITHUB_OUTPUT"
 
-      - name: Normal long-session-browser spec (3 samples, first-sample trace)
-        id: bench
-        if: steps.build.outputs.status == '0' && steps.browser.outputs.status == '0'
+      - name: Verify baseline sidebar-files loaded bundle and selector shape
+        id: baseline_artifact
+        if: steps.baseline_build.outputs.status == '0'
         continue-on-error: true
         run: |
           set +e
-          # vitest.bench.config.ts has no retry setting; this remains a single run.
-          DSH_STYLE_TRACE=1 DSH_BENCH_REPORT_PHASE=all pnpm exec vitest run \
-            --config vitest.bench.config.ts --no-file-parallelism --maxWorkers=1 \
-            benchmarks/long-session-browser/long-session.bench.ts \
-            2>&1 | tee "$DIAG_DIR/normal-bench.log"
-          status=${PIPESTATUS[0]}
-          echo "status=$status" >> "$GITHUB_OUTPUT"
-          if [ -d benchmarks/.dsh-report ]; then cp -R benchmarks/.dsh-report "$DIAG_DIR/normal-report"; fi
-
-      - name: Verify bounded single style-trace artifacts
-        id: trace
-        if: always()
-        continue-on-error: true
-        run: |
-          set +e
-          dir="$DIAG_DIR/style-trace"
-          trace="$dir/style-trace-sample-0.json"
-          meta="$dir/style-trace-sample-0.metadata.json"
           status=0
-          [ -f "$trace" ] || status=1
-          [ -f "$meta" ] || status=1
-          if [ -f "$trace" ]; then
-            bytes=$(stat -c%s "$trace")
-            echo "style_trace_bytes=$bytes" | tee -a "$DIAG_DIR/identity.txt"
-            [ "$bytes" -le 33554432 ] || status=1
-            node -e 'JSON.parse(require("node:fs").readFileSync(process.argv[process.argv.length - 1], "utf8"))' "$trace" || status=1
-          fi
-          if [ -f "$meta" ]; then
-            node -e '
-              const fs = require("node:fs");
-              const m = JSON.parse(fs.readFileSync(process.argv[process.argv.length - 1], "utf8"));
-              const problems = [];
-              if (m.sample !== 0) problems.push("sample");
-              if (m.bufferSizeKb !== 16384) problems.push("buffer");
-              if (m.maxCaptureMs !== 10000) problems.push("capture");
-              if (m.maxOutputBytes !== 33554432) problems.push("export");
-              if (m.browserVersion !== "149.0.7827.55") problems.push("browser-version");
-              if (m.traceFormat !== undefined && m.traceFormat !== "json") problems.push("format");
-              if (m.streamCompression !== undefined && m.streamCompression !== "none") problems.push("compression");
-              if (m.bytes > 33554432) problems.push("bytes");
-              if (m.truncated) problems.push("truncated");
-              if (m.dataLossOccurred || (m.bufferUsage?.maxPercentFull ?? 0) >= 1) problems.push("dataLoss");
-              if (m.completion !== "normal") problems.push("completion=" + String(m.completion));
-              if (!m.windowComplete) problems.push("window");
-              if ((m.cleanupErrors || []).length > 0) problems.push("cleanup");
-              if (m.parseError !== undefined) problems.push("parse");
-              if (m.readError !== undefined) problems.push("read");
-              console.log("trace_meta=" + JSON.stringify({ browserVersion: m.browserVersion, expectedBrowserVersion: m.expectedBrowserVersion, bufferSizeKb: m.bufferSizeKb, maxCaptureMs: m.maxCaptureMs, maxOutputBytes: m.maxOutputBytes, traceFormat: m.traceFormat === undefined ? "未回传" : m.traceFormat, streamCompression: m.streamCompression === undefined ? "未回传" : m.streamCompression, bytes: m.bytes, truncated: m.truncated, dataLossOccurred: m.dataLossOccurred, completion: m.completion, windowComplete: m.windowComplete, selectorStatsFound: m.selectorStatsFound, attributionReady: m.attributionReady }));
-              if (problems.length > 0) { console.error("trace_meta_problems=" + problems.join(",")); process.exit(1); }
-            ' "$meta" || status=1
-          fi
-          count=$(find "$dir" -maxdepth 1 -type f -name 'style-trace-sample-*.json' ! -name '*.metadata.json' 2>/dev/null | wc -l)
-          echo "style_trace_artifacts=$count" | tee -a "$DIAG_DIR/identity.txt"
-          [ "$count" -eq 1 ] || status=1
-          ls -l "$dir" 2>/dev/null || true
+          bundle=packages/client/ui-sidebar-files/lib/client.js
+          sha=$(sha256sum "$bundle" | cut -d' ' -f1)
+          cp "$bundle" "$DIAG_DIR/sidebar-baseline.js" || status=1
+          [ -s "$DIAG_DIR/sidebar-baseline.js" ] || { echo "baseline sidebar bundle copy is missing/empty" >&2; status=1; }
+          echo "sidebar_baseline_client_sha256=$sha" | tee -a "$DIAG_DIR/identity.txt"
+          node -e '
+            const fs = require("node:fs");
+            const file = process.argv[process.argv.length - 2];
+            const mode = process.argv[process.argv.length - 1];
+            const s = fs.readFileSync(file, "utf8").replace(/\s+/g, "");
+            const oldAncestor = /:has\(>\.[\w-]+_navigator/.test(s);
+            const newFill = /\.[\w-]+_navigator\.[\w-]+_fill~:not\(\.[\w-]+_navigator\)/.test(s);
+            const newFillHas = /:not\(\.[\w-]+_navigator\):has\(~\.[\w-]+_navigator\.[\w-]+_fill\)/.test(s);
+            const newWhole = /\.[\w-]+_navigator:not\(\.[\w-]+_wholePage\)~:not\(\.[\w-]+_navigator\)/.test(s);
+            const newWholeHas = /:not\(\.[\w-]+_navigator\):has\(~\.[\w-]+_navigator:not\(\.[\w-]+_wholePage\)\)/.test(s);
+            const vis = s.includes("visibility:hidden");
+            const ok = mode === "before"
+              ? oldAncestor && !newFill && !newFillHas && !newWhole && !newWholeHas && vis
+              : !oldAncestor && newFill && newFillHas && newWhole && newWholeHas && vis;
+            console.log(JSON.stringify({ mode, oldAncestor, newFill, newFillHas, newWhole, newWholeHas, visibility: vis, ok }));
+            if (!ok) process.exit(1);
+          ' "$bundle" before || status=1
           echo "status=$status" >> "$GITHUB_OUTPUT"
           exit "$status"
+
+      - name: Baseline long-session-browser spec (3 samples)
+        id: baseline
+        if: steps.baseline_build.outputs.status == '0' && steps.browser.outputs.status == '0' && steps.baseline_artifact.outputs.status == '0'
+        continue-on-error: true
+        run: |
+          set +e
+          DSH_BENCH_REPORT_PHASE=all pnpm exec vitest run \
+            --config vitest.bench.config.ts --no-file-parallelism --maxWorkers=1 \
+            benchmarks/long-session-browser/long-session.bench.ts \
+            2>&1 | tee "$DIAG_DIR/baseline-bench.log"
+          status=${PIPESTATUS[0]}
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          if [ -d benchmarks/.dsh-report ]; then cp -R benchmarks/.dsh-report "$DIAG_DIR/baseline-report"; fi
+
+      - name: Apply reviewed FilesBody CSS patch (cloud copy)
+        id: css_patch
+        if: steps.baseline_build.outputs.status == '0' && steps.browser.outputs.status == '0' && steps.baseline_artifact.outputs.status == '0'
+        run: |
+          set +e
+          printf '%s' "$FILESBODY_PATCH_B64" | base64 -d > "$DIAG_DIR/filesbody.patch"
+          status=$?
+          before_sha=$(sha256sum packages/client/ui-sidebar-files/src/client/FilesBody.module.css | cut -d' ' -f1)
+          cp packages/client/ui-sidebar-files/src/client/FilesBody.module.css "$DIAG_DIR/filesbody-before.css"
+          if [ "$status" = "0" ] && [ "$before_sha" = "$FILESBODY_BEFORE_SHA256" ]; then
+            git apply --check "$DIAG_DIR/filesbody.patch" && git apply "$DIAG_DIR/filesbody.patch"
+            status=$?
+          else
+            status=1
+          fi
+          after_sha=$(sha256sum packages/client/ui-sidebar-files/src/client/FilesBody.module.css | cut -d' ' -f1)
+          cp packages/client/ui-sidebar-files/src/client/FilesBody.module.css "$DIAG_DIR/filesbody-after.css"
+          git diff -- packages/client/ui-sidebar-files/src/client/FilesBody.module.css > "$DIAG_DIR/filesbody-applied.diff" || true
+          patch_sha=$(sha256sum "$DIAG_DIR/filesbody.patch" | cut -d' ' -f1)
+          chatview_sha=$(sha256sum packages/client/ui-chat/src/client/chat/ChatView.module.css | cut -d' ' -f1)
+          lock_sha=$(sha256sum pnpm-lock.yaml | cut -d' ' -f1)
+          echo "filesbody_css_after_sha256=$after_sha" | tee -a "$DIAG_DIR/identity.txt"
+          echo "filesbody_patch_sha256=$patch_sha" | tee -a "$DIAG_DIR/identity.txt"
+          echo "chatview_css_after_sha256=$chatview_sha" | tee -a "$DIAG_DIR/identity.txt"
+          echo "lock_after_sha256=$lock_sha" | tee -a "$DIAG_DIR/identity.txt"
+          [ "$patch_sha" = "$FILESBODY_PATCH_SHA256" ] || status=1
+          [ "$after_sha" = "$FILESBODY_AFTER_SHA256" ] || status=1
+          [ "$chatview_sha" = "$CHATVIEW_CSS_SHA256" ] || status=1
+          [ "$lock_sha" = "$LOCK_SHA256" ] || status=1
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          exit "$status"
+
+      - name: Candidate build after FilesBody patch
+        id: candidate_build
+        if: steps.baseline_build.outputs.status == '0' && steps.css_patch.outputs.status == '0'
+        continue-on-error: true
+        run: |
+          set +e
+          pnpm run build:bench 2>&1 | tee "$DIAG_DIR/candidate-build.log"
+          build_status=${PIPESTATUS[0]}
+          pnpm run build:web 2>&1 | tee -a "$DIAG_DIR/candidate-build.log"
+          web_status=${PIPESTATUS[0]}
+          echo "candidate_build_bench=$build_status candidate_build_web=$web_status" | tee -a "$DIAG_DIR/identity.txt"
+          [ "$build_status" = "0" ] && [ "$web_status" = "0" ]
+          echo "status=$?" >> "$GITHUB_OUTPUT"
+
+      - name: Verify candidate sidebar-files loaded bundle and selector shape
+        id: candidate_artifact
+        if: steps.candidate_build.outputs.status == '0'
+        continue-on-error: true
+        run: |
+          set +e
+          status=0
+          bundle=packages/client/ui-sidebar-files/lib/client.js
+          sha=$(sha256sum "$bundle" | cut -d' ' -f1)
+          if [ ! -s "$DIAG_DIR/sidebar-baseline.js" ]; then
+            echo "baseline sidebar bundle is missing/empty" >&2
+            baseline_sha=missing
+            status=1
+          else
+            baseline_sha=$(sha256sum "$DIAG_DIR/sidebar-baseline.js" | cut -d' ' -f1)
+          fi
+          cp "$bundle" "$DIAG_DIR/sidebar-candidate.js" || status=1
+          [ -s "$DIAG_DIR/sidebar-candidate.js" ] || { echo "candidate sidebar bundle copy is missing/empty" >&2; status=1; }
+          echo "sidebar_candidate_client_sha256=$sha" | tee -a "$DIAG_DIR/identity.txt"
+          echo "sidebar_baseline_client_sha256=$baseline_sha" | tee -a "$DIAG_DIR/identity.txt"
+          [ "$sha" != "$baseline_sha" ] || { echo "candidate bundle did not change" >&2; status=1; }
+          node -e '
+            const fs = require("node:fs");
+            const file = process.argv[process.argv.length - 2];
+            const mode = process.argv[process.argv.length - 1];
+            const s = fs.readFileSync(file, "utf8").replace(/\s+/g, "");
+            const oldAncestor = /:has\(>\.[\w-]+_navigator/.test(s);
+            const newFill = /\.[\w-]+_navigator\.[\w-]+_fill~:not\(\.[\w-]+_navigator\)/.test(s);
+            const newFillHas = /:not\(\.[\w-]+_navigator\):has\(~\.[\w-]+_navigator\.[\w-]+_fill\)/.test(s);
+            const newWhole = /\.[\w-]+_navigator:not\(\.[\w-]+_wholePage\)~:not\(\.[\w-]+_navigator\)/.test(s);
+            const newWholeHas = /:not\(\.[\w-]+_navigator\):has\(~\.[\w-]+_navigator:not\(\.[\w-]+_wholePage\)\)/.test(s);
+            const vis = s.includes("visibility:hidden");
+            const ok = mode === "before"
+              ? oldAncestor && !newFill && !newFillHas && !newWhole && !newWholeHas && vis
+              : !oldAncestor && newFill && newFillHas && newWhole && newWholeHas && vis;
+            console.log(JSON.stringify({ mode, oldAncestor, newFill, newFillHas, newWhole, newWholeHas, visibility: vis, ok }));
+            if (!ok) process.exit(1);
+          ' "$bundle" after || status=1
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          exit "$status"
+
+      - name: Candidate long-session-browser spec (3 samples)
+        id: candidate
+        if: steps.candidate_build.outputs.status == '0' && steps.browser.outputs.status == '0' && steps.candidate_artifact.outputs.status == '0'
+        continue-on-error: true
+        run: |
+          set +e
+          DSH_BENCH_REPORT_PHASE=all pnpm exec vitest run \
+            --config vitest.bench.config.ts --no-file-parallelism --maxWorkers=1 \
+            benchmarks/long-session-browser/long-session.bench.ts \
+            2>&1 | tee "$DIAG_DIR/candidate-bench.log"
+          status=${PIPESTATUS[0]}
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          if [ -d benchmarks/.dsh-report ]; then cp -R benchmarks/.dsh-report "$DIAG_DIR/candidate-report"; fi
 
       - name: Upload bounded diagnostic artifacts
         if: always()
@@ -242,20 +327,40 @@ jobs:
           failed=0
           patch_status='${{ steps.patch.outputs.status }}'
           browser_status='${{ steps.browser.outputs.status }}'
-          build_status='${{ steps.build.outputs.status }}'
-          bench_status='${{ steps.bench.outputs.status }}'
-          trace_status='${{ steps.trace.outputs.status }}'
-          for entry in "patch:$patch_status" "browser:$browser_status" "build:$build_status" "bench:$bench_status" "trace:$trace_status"; do
+          baseline_build_status='${{ steps.baseline_build.outputs.status }}'
+          baseline_artifact_status='${{ steps.baseline_artifact.outputs.status }}'
+          baseline_status='${{ steps.baseline.outputs.status }}'
+          css_status='${{ steps.css_patch.outputs.status }}'
+          candidate_build_status='${{ steps.candidate_build.outputs.status }}'
+          candidate_artifact_status='${{ steps.candidate_artifact.outputs.status }}'
+          candidate_status='${{ steps.candidate.outputs.status }}'
+          for entry in \
+            "bench-patch:$patch_status" \
+            "browser:$browser_status" \
+            "baseline-build:$baseline_build_status" \
+            "baseline-artifact:$baseline_artifact_status" \
+            "baseline-bench:$baseline_status" \
+            "filesbody-patch:$css_status" \
+            "candidate-build:$candidate_build_status" \
+            "candidate-artifact:$candidate_artifact_status" \
+            "candidate-bench:$candidate_status"; do
             echo "${entry%%:*} exit=${entry#*:}"
             [ "${entry#*:}" = "0" ] || failed=1
           done
-          echo "The benchmark/trace exits are diagnostic only; no PASS acceptance is claimed."
+          echo "Baseline and candidate are separate 3-sample runs; no combined median."
+          echo "Benchmark and trace-free exits are diagnostic only; no PASS acceptance is claimed."
+          [ "$baseline_artifact_status" = "0" ] || echo "baseline bundle unverified: no paired comparison is claimed"
+          [ "$candidate_artifact_status" = "0" ] || echo "candidate bundle unverified: candidate bench is withheld"
           cat "$DIAG_DIR/identity.txt"
-          echo "::group::benchmark log tail"
-          tail -160 "$DIAG_DIR/normal-bench.log" 2>/dev/null || true
-          echo "::endgroup::"
-          echo "::group::style-trace artifacts"
-          find "$DIAG_DIR/style-trace" -maxdepth 1 -type f -ls 2>/dev/null || true
-          cat "$DIAG_DIR/style-trace/style-trace-sample-0.metadata.json" 2>/dev/null || true
+          for name in baseline candidate; do
+            echo "::group::${name} bench log tail"
+            tail -160 "$DIAG_DIR/${name}-bench.log" 2>/dev/null || true
+            echo "::endgroup::"
+            echo "::group::${name} timeline diagnostics"
+            grep -E 'long-session-browser/timeline|long-session-browser/overlap-failure' "$DIAG_DIR/${name}-bench.log" 2>/dev/null || true
+            echo "::endgroup::"
+          done
+          echo "::group::sidebar-files bundle evidence"
+          sha256sum "$DIAG_DIR/sidebar-baseline.js" "$DIAG_DIR/sidebar-candidate.js" 2>/dev/null || true
           echo "::endgroup::"
           exit "$failed"
