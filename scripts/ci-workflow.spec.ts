@@ -1892,3 +1892,106 @@ describe('Policy workflows', () => {
     expect(run).toContain('"$CHECK_MODE" = block')
   })
 })
+
+
+describe('Phanrouter fixed-route e2e isolation', () => {
+  const workflow = loadWorkflow('.github/workflows/e2e.yml')
+  const stepsOf = (job: Record<string, unknown>): Record<string, unknown>[] => {
+    if (!Array.isArray(job.steps)) throw new TypeError('job must define steps')
+    return job.steps.filter(isRecord)
+  }
+  const liveTest = readFileSync(resolve(root, 'packages/llm/llm-pi-ai/tests/phanrouter.e2e.ts'), 'utf8')
+
+  it('keeps the official suite on its original endpoint and secret', () => {
+    const official = workflowJob(workflow, 'e2e')
+    const step = stepsOf(official).find(candidate => candidate.name === 'E2E tests (real DeepSeek API)')
+    expect(step).toMatchObject({
+      env: {
+        DEEPSEEK_API_KEY: '${{ secrets.DEEPSEEK_API_KEY_EXTERNAL }}',
+        DEEPSEEK_BASE_URL: 'https://api.deepseek.com/anthropic',
+      },
+      run: 'pnpm run test:e2e',
+    })
+    expect(JSON.stringify(official)).not.toContain('PHANROUTER_API_KEY')
+  })
+
+  it('executes the event/channel truth table for both real-model jobs', () => {
+    const router = workflowJob(workflow, 'e2e-phanrouter')
+    const official = workflowJob(workflow, 'e2e')
+    const personal = 'NBStarry/deepseek-harness'
+    const upstream = 'deepseek-harness/deepseek-harness'
+    const context = (repository: string, event: string, channel: string, fork = false, login = 'maintainer') => ({
+      github: {
+        repository,
+        event_name: event,
+        event: { pull_request: { head: { repo: { fork } }, user: { login } } },
+      },
+      inputs: { channel },
+    })
+    const rows: {
+      label: string
+      repository: string
+      event: string
+      channel: string
+      fork?: boolean
+      login?: string
+      router: boolean
+      official: boolean
+    }[] = [
+      { label: 'personal push', repository: personal, event: 'push', channel: 'default', router: true, official: false },
+      { label: 'personal schedule', repository: personal, event: 'schedule', channel: 'default', router: true, official: false },
+      { label: 'personal manual default', repository: personal, event: 'workflow_dispatch', channel: 'default', router: true, official: false },
+      { label: 'personal manual official', repository: personal, event: 'workflow_dispatch', channel: 'official', router: false, official: true },
+      { label: 'personal manual unknown', repository: personal, event: 'workflow_dispatch', channel: 'weird', router: false, official: false },
+      { label: 'personal same-repo PR head.fork=false', repository: personal, event: 'pull_request', channel: 'default', router: false, official: false },
+      { label: 'personal external non-fork PR', repository: personal, event: 'pull_request', channel: 'default', router: false, official: false },
+      { label: 'personal fork-head PR', repository: personal, event: 'pull_request', channel: 'default', fork: true, router: false, official: false },
+      { label: 'upstream push', repository: upstream, event: 'push', channel: 'default', router: false, official: true },
+      { label: 'upstream schedule', repository: upstream, event: 'schedule', channel: 'default', router: false, official: true },
+      { label: 'upstream manual default', repository: upstream, event: 'workflow_dispatch', channel: 'default', router: false, official: true },
+      { label: 'upstream manual official', repository: upstream, event: 'workflow_dispatch', channel: 'official', router: false, official: true },
+      { label: 'upstream manual unknown', repository: upstream, event: 'workflow_dispatch', channel: 'weird', router: false, official: false },
+      { label: 'upstream trusted PR', repository: upstream, event: 'pull_request', channel: 'default', router: false, official: true },
+      { label: 'upstream Dependabot PR', repository: upstream, event: 'pull_request', channel: 'default', login: 'dependabot[bot]', router: false, official: false },
+    ]
+    for (const row of rows) {
+      const ctx = context(row.repository, row.event, row.channel, row.fork, row.login)
+      expect(runInNewContext(String(router.if), ctx, { timeout: 1000 }), `${row.label} router`).toBe(row.router)
+      expect(runInNewContext(String(official.if), ctx, { timeout: 1000 }), `${row.label} official`).toBe(row.official)
+    }
+    expect(JSON.stringify(router)).toContain('${{ secrets.PHANROUTER_API_KEY }}')
+    expect(JSON.stringify(router)).not.toContain('DEEPSEEK_API_KEY_EXTERNAL')
+    expect(JSON.stringify(router)).not.toContain('DEEPSEEK_BASE_URL')
+    const smoke = stepsOf(router).find(candidate => candidate.name === 'Phanrouter fixed-route text prompt')
+    expect(smoke).toMatchObject({
+      env: {
+        PHANROUTER_API_KEY: '${{ secrets.PHANROUTER_API_KEY }}',
+        DEEPSEEK_API_KEY: '',
+        DSH_PHANROUTER_E2E: '1',
+      },
+    })
+    const smokeRun = String(smoke?.run)
+    expect(smokeRun).toContain(': "${PHANROUTER_API_KEY:?')
+    expect(smokeRun).toContain('pnpm exec vitest run --config vitest.e2e.config.ts --retry=0 --maxWorkers=1 packages/llm/llm-pi-ai/tests/phanrouter.e2e.ts')
+    expect(liveTest).toContain("process.env.DSH_PHANROUTER_E2E === '1'")
+  })
+
+  it('pins the trusted protocol, endpoint and model without invented transport options', () => {
+    expect(liveTest).toContain("const baseURL = 'https://cloud.phanthy.com/phanrouter/v1'")
+    expect(liveTest).toContain("const model = 'deepseek-v4.1-flash-1017'")
+    expect(liveTest).toContain("api: 'openai-completions'")
+    expect(liveTest).toContain("apiKeyEnv: 'PHANROUTER_API_KEY'")
+    expect(liveTest).toContain('retryPolicy: { mode: \'normal\', maxRetries: 0 }')
+    expect(liveTest).toContain('maxTokens: 128')
+    expect(liveTest).toContain('expectPhanrouterAssistant')
+    expect(liveTest).not.toContain('headers:')
+    expect(liveTest).not.toContain('thinkingFormat')
+    expect(liveTest).not.toContain('DEEPSEEK_')
+    const dispatch = workflowEvent(workflow, 'workflow_dispatch')
+    expect(dispatch).toMatchObject({
+      inputs: {
+        channel: { type: 'choice', options: ['default', 'official'], default: 'default' },
+      },
+    })
+  })
+})

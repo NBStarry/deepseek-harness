@@ -29,6 +29,13 @@ name: E2E (real DeepSeek API)
 # push/pull_request/workflow_dispatch act as backstops.
 on:
   workflow_dispatch:
+    inputs:
+      channel:
+        description: 'Real-model channel; default = Phanrouter on the personal fork, official elsewhere'
+        required: true
+        type: choice
+        options: [default, official]
+        default: default
   push:
     branches: [main, master]
   pull_request:
@@ -60,8 +67,16 @@ jobs:
     # Run on every trusted event. Skip untrusted PRs (forks + Dependabot) where
     # the secret is withheld — they would otherwise hard-fail the preflight.
     if: >-
-      github.event_name != 'pull_request'
-      || !(github.event.pull_request.head.repo.fork || github.event.pull_request.user.login == 'dependabot[bot]')
+      (
+        (github.repository != 'NBStarry/deepseek-harness'
+         && (github.event_name != 'workflow_dispatch'
+          || inputs.channel == 'default' || inputs.channel == 'official')
+         && (github.event_name != 'pull_request'
+          || !(github.event.pull_request.head.repo.fork || github.event.pull_request.user.login == 'dependabot[bot]')))
+        || (github.repository == 'NBStarry/deepseek-harness'
+          && github.event_name == 'workflow_dispatch'
+          && inputs.channel == 'official')
+      )
     # Profile e2e files can each own several complete dsh subprocess trees, so
     # four file workers preserve process/PTY headroom. Tests retain 120s/test
     # and retry 2; 45m still bounds retry storms against a slow API.
@@ -125,3 +140,47 @@ jobs:
           DSH_E2E_MAX_WORKERS: 6
           DSH_EXAMPLE_MODE: lib
         run: pnpm run test:e2e
+
+  e2e-phanrouter:
+    runs-on: >-
+      ${{ vars.DSH_CI_FAILOVER_LINUX == 'blacksmith'
+          && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-latest' }}
+    name: e2e (Phanrouter / DeepSeek OpenAI-completions)
+    # Personal-fork router runs only on push/schedule or manual channel=default.
+    # No PR event can select it, including a same-repository PR whose
+    # head.repo.fork is false or an external non-fork head.
+    if: >-
+      github.repository == 'NBStarry/deepseek-harness'
+      && (
+        github.event_name == 'push'
+        || github.event_name == 'schedule'
+        || (github.event_name == 'workflow_dispatch' && inputs.channel == 'default')
+      )
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: pnpm/action-setup@v5.0.0
+
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install (immutable)
+        run: pnpm install --frozen-lockfile
+
+      # One focused LlmRuntime + real LlmPiAi request. This is the only step
+      # that receives the independent router key; the parameter expansion makes
+      # a missing key fail explicitly rather than skip green. The fixed test
+      # also requires DSH_PHANROUTER_E2E=1, so the official test:e2e glob cannot
+      # select it merely because both keys happen to exist.
+      - name: Phanrouter fixed-route text prompt
+        env:
+          PHANROUTER_API_KEY: ${{ secrets.PHANROUTER_API_KEY }}
+          DEEPSEEK_API_KEY: ''
+          DSH_PHANROUTER_E2E: '1'
+          DSH_TELEMETRY_DISABLED: '1'
+        run: |
+          : "${PHANROUTER_API_KEY:?PHANROUTER_API_KEY is required for the Phanrouter route}"
+          pnpm exec vitest run --config vitest.e2e.config.ts --retry=0 --maxWorkers=1 packages/llm/llm-pi-ai/tests/phanrouter.e2e.ts
