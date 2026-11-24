@@ -5,6 +5,7 @@ import type { PeerId } from '@deepseek-ai/dsh-typert-protocol'
 import { CONNECT_PATH, type ConnectionInteractions } from './connect-protocol.ts'
 import { credentialKey } from '@deepseek-ai/dsh-credentials'
 import type { CredentialProvider, CredentialRecord } from '@deepseek-ai/dsh-credentials'
+import type { DesktopSshLogin } from './desktop-ssh-login.ts'
 import type {
   ConnectionIndexRequest,
   ConnectionIndexResponse,
@@ -113,6 +114,19 @@ function tokenMatches(actual: string, expected: string): boolean {
   return actualBytes.byteLength === expectedBytes.byteLength && timingSafeEqual(actualBytes, expectedBytes)
 }
 
+function matchesDesktopLogin(
+  login: DesktopSshLogin['verifier'], req: ConnectionIndexRequest, url: URL, token: string,
+): boolean {
+  const host = `127.0.0.1:${login.port}`
+  const origin = header(req.headers, 'origin')
+  return header(req.headers, 'host') === host && url.search === `?token=${token}`
+    && (origin === undefined || origin === new URL(`http://${host}`).origin)
+    && header(req.headers, 'sec-fetch-site') !== 'cross-site'
+    && ['forwarded', 'x-forwarded-for', 'x-forwarded-host', 'x-forwarded-proto'].every(name =>
+      req.headers instanceof Headers ? !req.headers.has(name) : req.headers[name] === undefined)
+    && login.matches(token)
+}
+
 function cookieName(authority: string): string {
   return COOKIE_PREFIX + encodeBase64Url(createHash('sha256').update(authority).digest())
 }
@@ -179,7 +193,7 @@ function decodeCookie(value: string, secret: Buffer): CookiePayload | undefined 
   return { version: 2, ...payload, id: decoded.id as PeerId }
 }
 
-async function initializeSecret(credentials: CredentialProvider): Promise<Buffer> {
+async function initializeSecret(credentials: Pick<CredentialProvider, 'modifyRecord'>): Promise<Buffer> {
   const generated: StoredSecretPayload = {
     version: STORED_SECRET_VERSION,
     secret: encodeBase64Url(randomBytes(SECRET_BYTES)),
@@ -230,7 +244,7 @@ export class BrowserAuth {
    */
   static async create(
     processOwner: object,
-    credentials: CredentialProvider,
+    credentials: Pick<CredentialProvider, 'modifyRecord'>,
     maxAgeDays: number,
   ): Promise<BrowserAuth> {
     return new BrowserAuth(processOwner, await initializeSecret(credentials), maxAgeDays)
@@ -258,16 +272,18 @@ export class BrowserAuth {
    * minted cookie carries `Secure` when it does. Only that listener's own
    * protocol decides, never a `publicUrl` announcement or a forwarded header:
    * those describe a hop this process does not terminate.
+   * @param login - verifier selected for the originating Desktop TCP socket, absent on other carriers.
    * @returns true only when the caller may serve index.html.
    */
-  authorizeIndex(req: ConnectionIndexRequest, res: ConnectionIndexResponse, secure = false): boolean {
+  authorizeIndex(req: ConnectionIndexRequest, res: ConnectionIndexResponse, secure = false, login?: DesktopSshLogin['verifier']): boolean {
     /* v8 ignore next -- node:http always supplies url on server requests. */
     const url = new URL(req.url ?? '/', 'http://dsh.invalid')
     const tokens = url.searchParams.getAll(TOKEN_QUERY)
     if (tokens.length > 0) {
       const authority = requestAudience(req.headers, secure)
-      if (req.method === 'GET' && url.pathname === '/' && tokens.length === 1
-        && authority !== undefined && tokenMatches(tokens.join(''), this.launchToken)) {
+      const token = tokens.join('')
+      if (req.method === 'GET' && url.pathname === '/' && tokens.length === 1 && authority !== undefined
+        && (tokenMatches(token, this.launchToken) || (!secure && login !== undefined && matchesDesktopLogin(login, req, url, token)))) {
         const issuedAt = Date.now()
         const expiresAt = issuedAt + this.maxAgeMilliseconds
         const value = encodeCookie({

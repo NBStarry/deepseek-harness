@@ -14,6 +14,7 @@ Desktop 在原生应用中运行 Harness 工作区。本参考文档说明应用
 
 - [应用概览](#application-overview)
 - [终端命令](#terminal-command)
+- [macOS 上的 DSH Go SSH 连接](#ssh-connection)
 - [关闭窗口与退出](#closing-the-window-and-quitting)
 - [关键技术决策](#key-technical-decisions)
 - [内置命令运行时](#bundled-command-runtime)
@@ -64,6 +65,29 @@ Desktop Host 的 Platform API 请求与更新策略请求用相同的 Platform �
 macOS 安装会创建 `/usr/local/bin/dsh`；目录权限需要时，系统会请求管理员认证，不会修改 shell 启动文件。Windows 管理对话框将命令注册到当前用户的 PATH。切换已有命令前会要求确认；修复当前已选中的 Desktop 命令不会重复要求切换确认。macOS 链接会保留并恢复被替换的启动器；Windows 会保留其他 PATH 条目，包括注册前就已存在的条目。若其他命令的 PATH 优先级更高，对话框会显示其位置。移动应用后，macOS 使用“修复”，Windows 从新位置使用“安装”。“移除”不会改动无关安装。
 
 命令注册是安装 Desktop 后的可选操作。卸载 Desktop 前，请通过**管理 dsh 命令… → 移除**删除其 CLI 注册；应用卸载程序不会移除该注册。更新或卸载 Desktop 前请结束 CLI 命令。CLI 运行时版本随已安装的 Desktop 版本变化。Desktop 插件命令与运行时限制见[内置命令运行时](#bundled-command-runtime)。
+
+<a id="ssh-connection"></a>
+
+## macOS 上的 DSH Go SSH 连接
+
+在 DSH Go 中使用 **SSH → 只连接**模式，连接 SSH 主机上已在运行的 Desktop 实例。DSH Go 需要能通过 SSH 登录该主机；Web 服务仍只监听 `127.0.0.1`，不会向网络开放。请在 DSH Go 中使用 Desktop 的 Web 端口，不要填 SSH 端口（通常为 `22`）。
+
+Desktop 默认使用系统分配的 Web 端口，不启用 SSH 令牌登录。要启用，请完全退出 Desktop，在其 profile 补丁（`$DSH_HOME/profiles/desktop/cordis.patch.yml`）中添加或更新 `webserver` 配置项。优先使用空闲的 `3080`，否则选择其他空闲端口，但不支持 `80`。以下示例替换 `webserver` 的配置，保留 Desktop 的标准压缩参数。请在应用已退出时保存，再重新打开 Desktop。端口冲突会导致启动失败，不会改用其他端口。移除覆盖后重启可恢复默认设置并关闭 SSH 令牌登录。CLI Web profile 不变。
+
+```yaml
+- id: webserver
+  name: '@deepseek-ai/dsh-host-webserver'
+  config:
+    host: '127.0.0.1'
+    port: 3080
+    compression: gzip
+    compressionLevel: 1
+    compressionThresholdBytes: 1024
+```
+
+选择 **DeepSeek Harness → SSH 连接…** 可查看端口。首次使用时确认**生成令牌**，然后选择**查看令牌**。将端口和令牌分别填入 DSH Go 中对应的字段。令牌只在原生对话框中显示，只有主动选择复制才会写入剪贴板。请像保管密码一样保管令牌，不要把它放入链接、日志或截图，使用后请清除剪贴板中的令牌。
+
+SSH 登录令牌独立于 Desktop 启动令牌，使用相同的固定回环端口时，重启后仍从当前的凭据存储中读取。**刷新令牌**需要确认并替换旧令牌；新登录无法再使用旧令牌，但已登录的 Cookie 继续有效。刷新后请更新 DSH Go 保存的令牌。若 Desktop 无法确认操作结果，请重新打开对话框检查后再决定是否重试。若凭据存储仍不可用，请修复问题后完全退出并重新打开 Desktop，以重新读取已保存的令牌。
 
 <a id="closing-the-window-and-quitting"></a>
 

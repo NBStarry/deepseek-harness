@@ -103,6 +103,14 @@ export interface ConnectionTrustRequest {
 /** HTTP status returned before dispatch, or undefined when the request may proceed. */
 export type ConnectionRequestRejection = 401 | 403 | undefined
 
+/** Facts supplied only by the real TCP receiver for requests with exactly one Host header. */
+export interface ConnectionIndexSocket {
+  /** The original request-target before `?` is exactly `/`, prior to URL parsing. */
+  readonly originFormRoot: boolean
+  readonly localAddress: string
+  readonly localPort: number
+}
+
 /** Root/index request facts used by the browser-token exchange. */
 export interface ConnectionIndexRequest extends ConnectionTrustRequest {
   readonly method?: string | undefined
@@ -261,9 +269,10 @@ export interface HostConnectionHandle {
    * which only that listener's protocol decides.
    * @param request - root or configured-index HTTP request.
    * @param response - response owned when the result is false.
+   * @param socket - trusted TCP receiver facts; omitting these disables Desktop SSH token exchange.
    * @returns true only when the frontend may serve index.html.
    */
-  authorizeIndex(request: ConnectionIndexRequest, response: ConnectionIndexResponse): boolean
+  authorizeIndex(request: ConnectionIndexRequest, response: ConnectionIndexResponse, socket?: ConnectionIndexSocket): boolean
 
   /**
    * Add the fresh process token to an ordinary Web application URL.

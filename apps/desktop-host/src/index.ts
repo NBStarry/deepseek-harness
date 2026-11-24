@@ -15,6 +15,7 @@ import { localDragResource } from './file-drag.ts'
 
 import { installDesktopUpdateTaskControl } from './update-tasks.ts'
 import { installDesktopQuitInspection } from './quit-inspection.ts'
+import { installDesktopSshLogin, type DesktopSshLoginRequest } from './ssh-login.ts'
 import { installPlatformSessionPublisher } from './platform-session.ts'
 import { installOfficeEngineResolution } from './office-engine.ts'
 import { installOperationDiagnostics } from './operation-diagnostics.ts'
@@ -52,6 +53,7 @@ async function main(): Promise<void> {
   const control: {
     updateTasks?: ReturnType<typeof installDesktopUpdateTaskControl>
     quitInspection?: ReturnType<typeof installDesktopQuitInspection>
+    sshLogin?: ReturnType<typeof installDesktopSshLogin>
   } = {}
   const send = (message: object): Promise<void> => new Promise((resolve, reject) => {
     if (!process.connected || process.send === undefined) { resolve(); return }
@@ -72,6 +74,21 @@ async function main(): Promise<void> {
   process.on('message', (message: unknown) => {
     if (typeof message !== 'object' || message === null || !('type' in message)) return
     if (message.type === 'shutdown') { void stop(); return }
+    if (message.type === 'ssh-login') {
+      if (stopping !== undefined || !('requestId' in message) || typeof message.requestId !== 'number'
+        || !Number.isSafeInteger(message.requestId) || message.requestId < 1 || !('action' in message)) return
+      const { requestId, action } = message
+      let request: DesktopSshLoginRequest
+      if (action === 'status') request = { action }
+      else if ((action === 'view' || action === 'rotate') && 'revision' in message && typeof message.revision === 'number'
+        && Number.isSafeInteger(message.revision) && message.revision > 0) request = { action, revision: message.revision }
+      else return
+      void (async () => {
+        const result = await control.sshLogin?.(request) ?? { kind: 'unavailable' }
+        if (stopping === undefined) await send({ type: 'ssh-login', requestId, result })
+      })().catch((_error: unknown) => { /* The caller's deadline contains IPC failure without logging the payload. */ })
+      return
+    }
     if (message.type === 'file-drag-cancel') {
       if ('requestId' in message && typeof message.requestId === 'number') dragReads.get(message.requestId)?.abort()
       return
@@ -131,6 +148,7 @@ async function main(): Promise<void> {
   installOperationDiagnostics(ctx, record => send({ type: 'plugin-operation', record }), 32, runId)
   control.updateTasks = installDesktopUpdateTaskControl(ctx)
   control.quitInspection = installDesktopQuitInspection(ctx)
+  if (process.platform === 'darwin') control.sshLogin = installDesktopSshLogin(ctx)
   await ctx.plugin(desktopOffice, {
     runtimeDir,
     source: process.argv[4] ?? join(runtimeDir, '..', 'runtime', 'primary-runtime'),

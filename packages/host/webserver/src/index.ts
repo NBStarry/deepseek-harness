@@ -10,8 +10,8 @@
  */
 
 import { readFile } from 'node:fs/promises'
-import { createServer } from 'node:http'
-import type { IncomingMessage, OutgoingHttpHeaders, ServerResponse, Server } from 'node:http'
+import { createServer, ServerResponse } from 'node:http'
+import type { IncomingMessage, OutgoingHttpHeaders, Server } from 'node:http'
 import { createServer as createSecureServer } from 'node:https'
 import { isIP, type AddressInfo } from 'node:net'
 import { resolve } from 'node:path'
@@ -57,12 +57,21 @@ export interface WebRoute {
   handler: (req: IncomingMessage, res: ServerResponse) => void | Promise<void>
 }
 
+/** Local TCP endpoint and root-target match, without header or query values. */
+export interface WebResourceSocket {
+  /** True when the original request target is `/` before its first question mark. */
+  readonly originFormRoot: boolean
+  readonly localAddress: string
+  readonly localPort: number
+}
+
 /**
  * Answers one GET or HEAD request with a Fetch response. An HTTP request
- * arrives without a Peer and carries the client's headers; an in-process
- * {@link WebServer.readResource} read passes the Peer its caller admitted.
+ * arrives without a Peer and carries the client's headers. Socket facts are
+ * available only for a native TCP exchange with exactly one observed Host.
+ * {@link WebServer.readResource} passes the admitted Peer and no socket facts.
  */
-export type WebResource = (request: Request, peer?: PeerScope) => Promise<Response>
+export type WebResource = (request: Request, peer?: PeerScope, socket?: WebResourceSocket) => Promise<Response>
 
 /** One named route answered by a resource instead of a handler. */
 export interface WebResourceRoute {
@@ -291,6 +300,18 @@ async function readTlsFile(field: 'certFile' | 'keyFile', path: string): Promise
 /** Methods a resource answers; any other method receives 405. */
 const RESOURCE_METHODS = 'GET, HEAD'
 
+/** Node's default HTTP parser can truncate rawHeaders at 2,000 name/value entries. */
+const RAW_HEADER_ENTRY_LIMIT = 2000
+
+function resourceSocket(req: IncomingMessage, res: ServerResponse): WebResourceSocket | undefined {
+  // The Worker feeds synthetic exchanges to the same listener, not native responses.
+  if (!(res instanceof ServerResponse) || res.req !== req || res.socket === null || res.socket !== req.socket) return undefined
+  const { localAddress, localPort } = res.socket
+  if (localAddress === undefined || localPort === undefined || req.rawHeaders.length >= RAW_HEADER_ENTRY_LIMIT
+    || req.headersDistinct.host?.length !== 1) return undefined
+  return { localAddress, localPort, originFormRoot: req.url === '/' || req.url?.startsWith('/?') === true }
+}
+
 /** Fetch response headers as node:http headers; each `set-cookie` value stays a separate line. */
 function nodeHeaders(headers: Headers): OutgoingHttpHeaders {
   const out: OutgoingHttpHeaders = Object.fromEntries(headers)
@@ -405,6 +426,11 @@ export class WebServer extends Service {
   /** The listening port (the OS-assigned value when config.port is 0), or `undefined` before `listen` binds. */
   get port(): number | undefined {
     return this.listenedPort
+  }
+
+  /** The requested listen port; zero means the OS chooses the port. */
+  get configuredPort(): number {
+    return this.config.port
   }
 
   /** The configured bind address (one concrete local interface). */
@@ -691,7 +717,8 @@ export class WebServer extends Service {
     }
     res.on('close', onClose)
     try {
-      const response = await resource(new Request(target, { method: req.method, headers, signal: abort.signal }))
+      const request = new Request(target, { method: req.method, headers, signal: abort.signal })
+      const response = await resource(request, undefined, resourceSocket(req, res))
       await writeResponse(res, response, req.method === 'HEAD', abort.signal)
       if (!abort.signal.aborted) {
         ended = true

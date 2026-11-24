@@ -230,6 +230,19 @@ describe('real Loader composition', () => {
     expect(() => server.registerFallback(() => {})).not.toThrow()
   })
 
+  it('passes the receiving endpoint to Connection for an opted-in index exchange', { timeout: 60_000 }, async () => {
+    const loaded = await loadComposition()
+    const port = loaded.webServer.port
+    if (port === undefined) throw new Error('frontend-static test: the listener has not bound a port')
+    const path = '/?token=fixture'
+    const manual = { redirect: 'manual' } as const
+    expect((await request(port, path, manual)).status).toBe(401)
+    loaded.provide('desktopSshLogin', { port, matches: token => token === 'fixture' })
+    expect((await request(port, path, manual)).status).toBe(303)
+    expect((await request(port, path, { ...manual, method: 'HEAD' })).status).toBe(401)
+    expect((await request(port, '/index.html?token=fixture', manual)).status).toBe(401)
+  })
+
   it('answers in-process reads for the given Peer without browser authentication', { timeout: 60_000 }, async () => {
     const loaded = await loadComposition()
     const server = loaded.webServer

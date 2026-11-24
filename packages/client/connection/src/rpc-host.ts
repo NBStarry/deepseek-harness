@@ -8,12 +8,14 @@ import {
   RpcId,
   type ClientRequest,
   type RpcId as RpcIdType,
+  type ConnectionIndexSocket,
 } from './rpc.ts'
 import { clientRequestSchema } from './rpc-schema.ts'
 import { bridge } from './http-bridge.ts'
 import { isRemoteAuthority, isTrustedApiRequest } from './api-request-trust.ts'
 import { API_PATH } from './api-path.ts'
 import type { BrowserAuth } from './browser-auth.ts'
+import { desktopIndexVerifier } from './desktop-ssh-login.ts'
 import { Peer } from './peer.ts'
 import type {
   PeerAdmission,
@@ -190,8 +192,11 @@ export class HostConnectionService extends Service implements HostConnectionHand
   /**
    * Authenticate an index request; native TLS listeners mint Secure cookies.
    */
-  authorizeIndex(request: ConnectionIndexRequest, response: ConnectionIndexResponse): boolean {
-    return this.browserAuth.authorizeIndex(request, response, this.ctx.get('webServer')?.protocol === 'https:')
+  authorizeIndex(request: ConnectionIndexRequest, response: ConnectionIndexResponse, socket?: ConnectionIndexSocket): boolean {
+    const listener = this.ctx.get('webServer')
+    const login = socket === undefined || this.disposed ? undefined
+      : desktopIndexVerifier(this.ctx.get('desktopSshLogin'), listener, socket)
+    return this.browserAuth.authorizeIndex(request, response, listener?.protocol === 'https:', login)
   }
 
   /** Add this process's launch token to the clean application URL. */

@@ -36,7 +36,7 @@ kind: "package-reference"
     port: 3000
 ```
 
-`host` 接受本机某个接口的一个具体 IPv4 或 IPv6 字面量——例如容器自身来自 `hostname -i` 的 Pod 地址。回环字面量（127/8 内的任意地址、`::1`，或二者的 mapped 形式）把服务器留在本机；其他任何字面量都会在该地址所属网络上提供 HTTP，除非设置 `tls`，否则为明文。未指定地址——包括 Linux 视为 IPv4 any 的 IPv4-mapped 形式——会在加载时被拒绝，而不是一次性打开每个网络接口的端口。`port` 为 0 时请求 OS 分配端口；之后用 `ctx.webServer.port` 读取正在监听的端口，导出的 `isLoopbackHost(host)` 与 `isWildcardHost(host)` 按解析后的地址值分类，因此 mapped 或带 zone 的写法会按其指名的地址分类。点分四段式的 IPv6 尾部表示该地址自身的低 32 位，与 `listen` 的读法完全一致：`::0.0.0.1` 是回环 `::1`，而 `::127.0.0.1` 是非回环的 `::7f00:1`；`normalizeBindAddress(host)` 返回该地址的文本——真正 mapped 的 `::ffff:127.0.0.1` 为 `127.0.0.1`，`::0.0.0.1` 与 `::1%lo` 为 `::1`——可直接用作 URL host。`bindUrlHost(host)` 把该文本写成 URL host（IPv6 加方括号），对 URL 无法携带的非回环带 zone 地址返回 `undefined`；`ctx.webServer.getOrigin()` 把它与协议、监听端口组合成本机客户端访问的根 URL，在端口绑定之前或没有 URL 形式时抛错。
+`host` 接受本机某个接口的一个具体 IPv4 或 IPv6 字面量——例如容器自身来自 `hostname -i` 的 Pod 地址。回环字面量（127/8 内的任意地址、`::1`，或二者的 mapped 形式）把服务器留在本机；其他任何字面量都会在该地址所属网络上提供 HTTP，除非设置 `tls`，否则为明文。未指定地址——包括 Linux 视为 IPv4 any 的 IPv4-mapped 形式——会在加载时被拒绝，而不是一次性打开每个网络接口的端口。`ctx.webServer.configuredPort` 读出配置端口（0 表示由操作系统分配），`ctx.webServer.port` 在绑定后读出实际监听端口。导出的 `isLoopbackHost(host)` 与 `isWildcardHost(host)` 按解析后的地址值分类，因此 mapped 或带 zone 的写法会按其指名的地址分类。点分四段式的 IPv6 尾部表示该地址自身的低 32 位，与 `listen` 的读法完全一致：`::0.0.0.1` 是回环 `::1`，而 `::127.0.0.1` 是非回环的 `::7f00:1`；`normalizeBindAddress(host)` 返回该地址的文本——真正 mapped 的 `::ffff:127.0.0.1` 为 `127.0.0.1`，`::0.0.0.1` 与 `::1%lo` 为 `::1`——可直接用作 URL host。`bindUrlHost(host)` 把该文本写成 URL host（IPv6 加方括号），对 URL 无法携带的非回环带 zone 地址返回 `undefined`；`ctx.webServer.getOrigin()` 把它与协议、监听端口组合成本机客户端访问的根 URL，在端口绑定之前或没有 URL 形式时抛错。
 
 设置 `compression: 'gzip'` 可以包装符合条件的 socket-backed 响应，而不改变 route API。客户端必须接受 gzip，且媒体类型必须可压缩或为 `multipart/form-data`；已知长度小于 `compressionThresholdBytes` 的响应保持未压缩，未知长度的流则立即符合条件。已有编码、`Cache-Control: no-transform`、range 响应、SSE（Server-Sent Events）、ZIP 与已打包的 `.gz` Worker image 均保持不变。随附 Web bundle 使用 level 1 与 1024 字节阈值；其他组合默认不压缩。
 
@@ -60,7 +60,7 @@ kind: "package-reference"
 
 `register(route)` 添加具名的 `exact`／`prefix` HTTP route，`registerUpgrade(route)` 为精确 pathname 添加 upgrade route，两者返回的 disposer 都会移除注册。同一张表内的重复路径会抛错——route 模式是组合层约定，冲突即配置错误。HTTP 匹配先在整张表中匹配精确 route，再匹配最长前缀，最后交给回退；upgrade 只做精确匹配，未命中连接直接关闭。
 
-具名 route 可以用 `resource(request, peer?)` 代替 `handler`：一个把 Fetch `Request` 映射为 `Response` 的函数。经 HTTP 时只有 `GET` 与 `HEAD` 能到达它——其他方法得到带 `Allow: GET, HEAD` 的 405，请求 body 从不读取——请求不带 Peer，携带客户端的 header，URL 是把请求目标按一个占位 origin 解析得到的，客户端的 authority 只保留在 `host` 头里。响应按背压写回，gzip 的处理与 handler 的响应相同；`HEAD` 不发送 body，客户端断开会中止 `request.signal` 并取消 body。`readResource(request, peer)` 返回同一 URL 经 HTTP 会得到的响应，由 resource 按 `peer` 计算（`HEAD` 读取不返回 body）：它遵循 HTTP 的匹配顺序；路径属于 handler、或落到未认领或 handler 形式的回退时返回 404；`GET`、`HEAD` 以外的方法返回 405；不检查 cookie、Host 或 Origin，因此调用方须先准入读者。
+具名 route 可以用 `resource(request, peer?, socket?)` 代替 `handler`。原生 TCP 请求只有一个可明确识别的 Host 头时，`socket` 给出本地地址、端口，以及原始请求目标在 `?` 之前是否恰为 `/`。其中不含请求头或查询参数的值；Worker 请求和进程内读取不带 `socket`。经 HTTP 时只有 `GET` 与 `HEAD` 能到达它——其他方法得到带 `Allow: GET, HEAD` 的 405，请求 body 从不读取——请求不带 Peer，携带客户端的 header，URL 是把请求目标按一个占位 origin 解析得到的，客户端的 authority 只保留在 `host` 头里。响应按背压写回，gzip 的处理与 handler 的响应相同；`HEAD` 不发送 body，客户端断开会中止 `request.signal` 并取消 body。`readResource(request, peer)` 返回同一 URL 经 HTTP 会得到的响应，由 resource 按 `peer` 计算（`HEAD` 读取不返回 body）：它遵循 HTTP 的匹配顺序；路径属于 handler、或落到未认领或 handler 形式的回退时返回 404；`GET`、`HEAD` 以外的方法返回 405；不检查 cookie、Host 或 Origin，因此调用方须先准入读者。
 
 ### 回退席位
 

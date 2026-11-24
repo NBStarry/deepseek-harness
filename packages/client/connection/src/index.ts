@@ -22,6 +22,7 @@ export type {
   ConnectionFetchRoute,
   ConnectionIndexRequest,
   ConnectionIndexResponse,
+  ConnectionIndexSocket,
   ConnectionRpcEndpointMatcher,
   ConnectionRpcAttachment,
   ConnectionRpcFailure,
@@ -52,6 +53,7 @@ export {
   serverResponseSchema,
 } from './rpc-schema.ts'
 export { HostConnectionService } from './rpc-host.ts'
+export { DesktopSshLogin } from './desktop-ssh-login.ts'
 
 export { API_PATH } from './api-path.ts'
 

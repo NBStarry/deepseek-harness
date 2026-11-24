@@ -271,6 +271,26 @@ describe('connection node half', () => {
     }
   })
 
+  it('marks the launch cookie Secure when a shared Connection serves an isolated HTTPS listener', async () => {
+    const { ctx, dispose } = await mounted(undefined, 'http:')
+    const receiver = ctx.isolate('webServer')
+    const tls = receiver.plugin((webCtx) => {
+      webCtx.provide('webServer', fakeHttpServer([], [], '127.0.0.1', 'https:') as WebServer)
+    })
+    try {
+      await tls.await()
+      const connection = receiver.get('connection') as HostConnectionHandle
+      const url = new URL(connection.authenticatedUrl('https://127.0.0.1:3080'))
+      const exchanged = fakeResponse()
+      connection.authorizeIndex(fakeRequest({ host: url.host }, `/${url.search}`), exchanged.response)
+      expect(exchanged.state.status).toBe(303)
+      expect(exchanged.state.headers?.['set-cookie']?.endsWith('; Secure')).toBe(true)
+    } finally {
+      await tls.dispose()
+      await dispose()
+    }
+  })
+
   it('injects validated browser recovery timing and withdraws it on disposal', async () => {
     const { ctx, dispose } = await mounted({ recovery: { generationReadyTimeoutMs: 25_000 } })
     try {

@@ -14,6 +14,7 @@ Desktop runs the Harness workspace in a native application. This reference cover
 
 - [Application overview](#application-overview)
 - [Terminal command](#terminal-command)
+- [DSH Go SSH connection on macOS](#ssh-connection)
 - [Closing the window and quitting](#closing-the-window-and-quitting)
 - [Key technical decisions](#key-technical-decisions)
 - [Bundled command runtime](#bundled-command-runtime)
@@ -64,6 +65,29 @@ The application menu's **Manage dsh Command…** entry, immediately below **Chec
 On macOS, installation creates `/usr/local/bin/dsh` and requests administrator authentication when the directory requires it. Shell startup files are unchanged. On Windows, the management dialog registers the command in the current user's PATH. A pre-existing command requires confirmation before switching; repairing Desktop's own selected command does not repeat that confirmation. The macOS link preserves and restores the displaced launcher; Windows preserves other PATH entries, including entries that predate registration. A command with higher PATH precedence is reported with its location. After moving the application, use Repair on macOS or Install from the new location on Windows. Remove leaves unrelated installations intact.
 
 Command registration is optional after installing Desktop. Use **Manage dsh Command… → Remove** before uninstalling Desktop to remove its CLI registration; the application uninstaller does not remove it. Finish CLI commands before updating or uninstalling Desktop. The CLI runtime version follows the installed Desktop release. See [bundled command runtime](#bundled-command-runtime) for Desktop plugin commands and runtime limitations.
+
+<a id="ssh-connection"></a>
+
+## DSH Go SSH connection on macOS
+
+Use DSH Go's **SSH → Connect only** mode to reach the Desktop instance already running on the SSH host. DSH Go needs SSH access to that machine; the Web listener stays on `127.0.0.1` and is not opened to the network. Use the Desktop Web port in DSH Go, not the SSH port (typically `22`).
+
+Desktop uses an OS-assigned Web port by default, with SSH token login disabled. To opt in, quit Desktop completely and add or update the `webserver` row in its profile patch (`$DSH_HOME/profiles/desktop/cordis.patch.yml`). Use `3080` if it is free; otherwise choose another free port other than `80`. This example replaces the `webserver` config and keeps Desktop's standard compression settings. Save it while the application is stopped, then reopen Desktop. A port conflict is a startup error; Desktop does not switch to another port. Removing the override and restarting restores the default and disables SSH token login. The CLI Web profile is unchanged.
+
+```yaml
+- id: webserver
+  name: '@deepseek-ai/dsh-host-webserver'
+  config:
+    host: '127.0.0.1'
+    port: 3080
+    compression: gzip
+    compressionLevel: 1
+    compressionThresholdBytes: 1024
+```
+
+Choose **DeepSeek Harness → SSH connection…** to see the port. Confirm **Generate token** for first use, then choose **View token**. Enter the port and token in their separate DSH Go fields. The token appears only in a native dialog; copying is optional and explicit. Treat the token like a password: do not put it in a link, log, or screenshot. Clear it from the clipboard after use.
+
+The token is separate from Desktop's launch token and persists in the active credential store across restarts with the same fixed loopback port. **Refresh token** requires confirmation and replaces the old token for new sign-ins; existing sign-in cookies stay valid. Update the token saved in DSH Go after refreshing it. If Desktop cannot confirm a change, reopen the dialog to check before retrying. If the credential store remains unavailable, fix it and fully quit and reopen Desktop to reload the saved token.
 
 <a id="closing-the-window-and-quitting"></a>
 
