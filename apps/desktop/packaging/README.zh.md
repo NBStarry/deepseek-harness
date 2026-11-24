@@ -170,7 +170,7 @@ pnpm run package:desktop:mac:arm64:unsigned
 pnpm run package:desktop:mac:x64:unsigned
 ```
 
-设置 `DSH_DESKTOP_INCLUDE_CUA=1` 可在未签名的 macOS arm64 构建中加入实验性 Computer Use bundle 及其 ad-hoc 签名 helper；默认不包含。构建使用仓库中的 Swift 源码，并将 helper 纳入受校验的软件包集合。CI 应随源码提交记录所用 Xcode 和 Swift 版本；这些检查不代表逐字节可复现或运行功能已验证。构建不会自动启用 profile 中的 bundle。若 profile 选择了同名 bundle，Desktop 运行时的 bundle 会优先于 profile 本地旧包；迁移前应单独检查 profile 及其覆盖层。profile 单独安装的 CUA 组件仍可能优先于运行时副本：安装验收时须核查各角色解析路径与版本，并取得授权后才通过插件管理器移除旧候选。构建不会删除 profile 软件包或修改 preset 覆盖层。
+设置 `DSH_DESKTOP_INCLUDE_CUA=1` 可在未签名的 macOS arm64 构建中加入实验性 Computer Use bundle 及其 ad-hoc 签名 helper；默认不包含。构建使用仓库中的 Swift 源码，并将 helper 纳入受校验的软件包集合。CI 应随源码提交记录所用 Xcode 和 Swift 版本；这些检查不代表逐字节可复现或运行功能已验证。本地未签名构建工作流默认设置该标志。构建出的应用仅为新桌面配置默认选中电脑使用，已有配置保留原选择。若 profile 选择了同名 bundle，Desktop 运行时的 bundle 会优先于 profile 本地旧包；迁移前应单独检查 profile 及其覆盖层。profile 单独安装的 CUA 组件仍可能优先于运行时副本：安装验收时须核查各角色解析路径与版本，并取得授权后才通过插件管理器移除旧候选。构建不会删除 profile 软件包或修改 preset 覆盖层。
 
 添加 `--check` 仅验证本地配置和工具而不构建，或添加 `--dir` 只生成解包应用。DMG 路径为 `apps/desktop/.desktop-build/targets/<target>/unsigned-artifacts/deepseek-harness-<version>-mac-<arch>-unsigned.dmg`。所有检查通过后，命令打印 `DMG:` 及其绝对路径。打开后将应用复制到本地测试目录。
 

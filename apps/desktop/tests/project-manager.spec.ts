@@ -1,11 +1,12 @@
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { resolveDesktopPaths } from '../src/paths.ts'
 import { DesktopProjectManager } from '../src/project-manager.ts'
-import { readProfilePlugins } from '@deepseek-ai/dsh-app-boot'
-import { runtimeFixture } from './runtime-fixture.ts'
+import { readProfileManifest, readProfilePlugins, writeProfileBundles } from '@deepseek-ai/dsh-app-boot'
+import { runtimeFixture, writePackage } from './runtime-fixture.ts'
+import { readDesktopRuntime, writeDesktopRuntime } from '../src/runtime-tree.ts'
 
 const roots: string[] = []
 function temporaryRoot(): string {
@@ -38,11 +39,113 @@ function setup(): { root: string; manager: DesktopProjectManager } {
   runtimeFixture(dsh)
   return { root, manager: new DesktopProjectManager(resolveDesktopPaths(join(root, '.dsh')), { dsh }) }
 }
+const cua = '@deepseek-ai/dsh-cua-bundle'
+const cuaProvider = '@deepseek-ai/dsh-experimental-cua-macos'
+const cuaGeneration = 'b'.repeat(64)
+const cuaBin = `node_modules/${cuaProvider}/native/bin/darwin-arm64`
+const cuaExecutable = `${cuaBin}/${cuaGeneration}/DSH Computer Use.app/Contents/MacOS/dsh-cua-native`
+const cuaReceipt = `${cuaBin}/current.json`
+function seedComputerUse(dsh: string, target: { platform: NodeJS.Platform; arch: string } = { platform: 'darwin', arch: 'arm64' }) {
+  const modules = join(dsh, 'node_modules')
+  const bundle = writePackage(modules, cua, { dsh: { bundle: { patch: './bundle.yml' } } })
+  writeFileSync(join(bundle, 'bundle.yml'), '[]\n')
+  const bin = join(writePackage(modules, cuaProvider), 'native/bin/darwin-arm64')
+  const executable = join(bin, cuaGeneration, 'DSH Computer Use.app/Contents/MacOS/dsh-cua-native')
+  mkdirSync(dirname(executable), { recursive: true })
+  writeFileSync(executable, 'fixture only', { mode: 0o755 })
+  writeFileSync(join(bin, 'current.json'), JSON.stringify({ bundle: cuaGeneration }))
+  const runtime = readDesktopRuntime(dsh)
+  writeDesktopRuntime(dsh, runtime.release, [...runtime.sharedPackages.map(pkg => pkg.name), cua, cuaProvider], target)
+  return { receipt: join(dsh, cuaReceipt), executable: join(dsh, cuaExecutable) }
+}
+function packagedCua(target: { platform: NodeJS.Platform; arch: string } = { platform: 'darwin', arch: 'arm64' }) {
+  const { manager } = setup()
+  const { dsh } = manager.runtime
+  const seeded = seedComputerUse(dsh, target)
+  return { manager: new DesktopProjectManager(manager.paths, { dsh, packaged: true }), ...seeded }
+}
+/**
+ * Build an archive-shaped runtime: the logical dsh tree lives inside app.asar while
+ * the helper payload exists on the physical app.asar.unpacked sibling.
+ * @param mutate - edits the unpacked physical tree before release application.
+ * @returns the manager under test plus the physical and logical roots.
+ */
+function packagedCuaInArchive(mutate?: (paths: { unpacked: string; executable: string }) => void) {
+  const { manager } = setup()
+  const { dsh } = manager.runtime
+  seedComputerUse(dsh)
+  const resources = dirname(dsh)
+  const archive = join(resources, 'app.asar')
+  mkdirSync(archive, { recursive: true })
+  const archived = join(archive, 'dsh')
+  renameSync(dsh, archived)
+  const unpacked = join(resources, 'app.asar.unpacked', 'dsh')
+  cpSync(archived, unpacked, { recursive: true })
+  // The logical archive alone has no physical receipt; only the unpacked sibling is readable by plain Node.
+  unlinkSync(join(archived, cuaReceipt))
+  const executable = join(unpacked, cuaExecutable)
+  mutate?.({ unpacked, executable })
+  return { manager: new DesktopProjectManager(manager.paths, { dsh: archived, packaged: true }), executable }
+}
+function selectedBundles(manager: DesktopProjectManager): string[] {
+  return (JSON.parse(readFileSync(join(manager.paths.profile, 'package.json'), 'utf8')) as
+    { dsh: { profile: { bundles: string[] } } }).dsh.profile.bundles
+}
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
 
 describe('desktop external plugin profile', () => {
+  it.skipIf(process.platform === 'win32').each(['deselect', 'recover'])('preserves %s after first selecting embedded Computer Use', async (action) => {
+    const { manager } = packagedCua()
+    await manager.applyRelease()
+    expect(selectedBundles(manager)).toEqual(['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', cua])
+    if (action === 'recover') await manager.disableAllPlugins()
+    else {
+      const profile = manager.paths.profile
+      writeProfileBundles(profile, readProfileManifest('dsh', profile), selectedBundles(manager).filter(name => name !== cua))
+    }
+    await manager.applyRelease()
+    expect(selectedBundles(manager)).not.toContain(cua)
+  })
+
+  it.skipIf(process.platform === 'win32')('reads the physical helper beside app.asar exactly as an unpacked feature', async () => {
+    const { manager } = packagedCuaInArchive()
+    await manager.applyRelease()
+    expect(selectedBundles(manager)).toContain(cua)
+  })
+
+  it.skipIf(process.platform === 'win32').each([
+    ['an empty file', (executable: string) => { writeFileSync(executable, '') }],
+    ['a file without an executable bit', (executable: string) => { chmodSync(executable, 0o644) }],
+  ])('does not select Computer Use when app.asar.unpacked carries %s', async (_condition, mutate) => {
+    const { manager } = packagedCuaInArchive(({ executable }) => { mutate(executable) })
+    await manager.applyRelease()
+    expect(selectedBundles(manager)).not.toContain(cua)
+  })
+
+  it('does not backfill an existing unselected profile on upgrade from development or a build without CUA', async () => {
+    const { manager } = packagedCua()
+    await new DesktopProjectManager(manager.paths, { dsh: manager.runtime.dsh }).applyRelease()
+    expect(selectedBundles(manager)).not.toContain(cua)
+    const before = readFileSync(join(manager.paths.profile, 'package.json'), 'utf8')
+    await manager.applyRelease()
+    expect(readFileSync(join(manager.paths.profile, 'package.json'), 'utf8')).toBe(before)
+  })
+
+  it.each(['no executable', 'no receipt', 'invalid receipt', 'wrong generation', 'no embedded package', 'Intel', 'Windows'])
+  ('does not select Computer Use when the build has %s', async (condition) => {
+    const target = { platform: condition === 'Windows' ? 'win32' as const : 'darwin' as const, arch: condition === 'Intel' ? 'x64' : 'arm64' }
+    const { manager, receipt, executable } = packagedCua(target)
+    if (condition === 'no executable') unlinkSync(executable)
+    if (condition === 'no receipt') unlinkSync(receipt)
+    if (condition === 'invalid receipt') writeFileSync(receipt, 'broken')
+    if (condition === 'wrong generation') writeFileSync(receipt, JSON.stringify({ bundle: '../invalid' }))
+    if (condition === 'no embedded package') runtimeFixture(manager.runtime.dsh)
+    await manager.applyRelease()
+    expect(selectedBundles(manager)).not.toContain(cua)
+  })
+
   it('preserves installed packages, profile state, and the lockfile when preparing a launch', async () => {
     const { manager } = setup()
     await manager.applyRelease()

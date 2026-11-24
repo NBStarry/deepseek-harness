@@ -23,6 +23,12 @@ export interface ProfileContext {
   readonly home: string
   /** Bundle packages used to start this process, before any persisted edits. */
   readonly startedBundles: readonly string[]
+  /**
+   * Additional bundles this installation ships for switching at runtime, so they are
+   * already carried and never fetched. Omission means the installation provides none;
+   * this is deliberately not the complete runtime package closure.
+   */
+  readonly installationBundles?: readonly string[]
   /** Parsed command-line overlays, applied above profile and home patches. */
   readonly overlays: readonly PatchOptions[]
   /** Launch-time DSH_TELEMETRY_DISABLED value; any non-empty value opts out. */

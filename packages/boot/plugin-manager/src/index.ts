@@ -499,19 +499,23 @@ export class PluginManager extends TypertRemoteService {
     const dependencies = Object.keys(recorded)
     const installation = JSON.parse(readFileSync(this.profile.installAnchor, 'utf8')) as InstallationManifest
     const catalog = new Map(OFFICIAL_ON_DEMAND_CATALOG.map(entry => [entry.packageName, entry]))
-    const names = [...new Set([...selected, ...dependencies, ...Object.keys(installation.dependencies ?? {}), ...catalog.keys()])]
+    const switchable = this.profile.installationBundles ?? []
+    const names = [...new Set([
+      ...selected, ...dependencies, ...Object.keys(installation.dependencies ?? {}), ...switchable, ...catalog.keys(),
+    ])]
     const bundles: Omit<BundleInfo, 'updatable'>[] = []
     const runtimeVersion = getDshRuntimeVersion()
     for (const name of names) {
       const installed = dependencies.includes(name)
-      const optional = OPTIONAL_BUNDLES.includes(name)
+      const embedded = switchable.includes(name)
+      const optional = embedded || OPTIONAL_BUNDLES.includes(name)
       const enabled = selected.includes(name)
-      const shipped = Object.hasOwn(installation.dependencies ?? {}, name)
+      const shipped = embedded || Object.hasOwn(installation.dependencies ?? {}, name)
       const offered = catalog.get(name)
       const official = optional || offered !== undefined
       let target: Pick<BundleInfo, 'installTarget'> = {}
       let targetError: ManagementError | undefined
-      if (offered !== undefined) {
+      if (offered !== undefined && !embedded) {
         try { target = { installTarget: officialBundleInstallTarget(name, this.profile.installAnchor, runtimeVersion) } }
         catch (error) { targetError = managementError(error) }
       }
@@ -613,6 +617,7 @@ export class PluginManager extends TypertRemoteService {
     const installation = JSON.parse(readFileSync(this.profile.installAnchor, 'utf8')) as InstallationManifest
     const known = new Set([
       ...bundleSelection(manifest), ...Object.keys(manifest.dependencies ?? {}), ...Object.keys(installation.dependencies ?? {}),
+      ...this.profile.installationBundles ?? [],
     ])
     const plan = registryPlan(options?.registry, await this.registries())
     const registry = plan[0] as Registry

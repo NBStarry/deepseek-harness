@@ -40,7 +40,8 @@ export async function smokeDesktopRuntime(
   let timer: ReturnType<typeof setTimeout> | undefined
   try {
     writeFileSync(join(home, 'npmrc'), '')
-    createPluginProfile(profile)
+    // Plain Node has no ASAR view; the profile resolves the physical helper root exactly as Electron.
+    createPluginProfile(profile, { root, descriptor: runtime })
     const pluginName = 'desktop-runtime-smoke-plugin'
     const plugin = join(home, pluginName)
     mkdirSync(plugin, { recursive: true })
@@ -91,7 +92,11 @@ import { readFile } from 'node:fs/promises'
 export function apply(ctx) {
   if (!(ctx instanceof Context)) throw new Error('desktop runtime: external plugin loaded another Cordis instance')
   ctx.effect(() => ctx.webServer.register({ kind: 'exact', path: '/desktop-smoke',
-    handler(_request, response) { response.end('plugin route ready') } }))
+    async handler(_request, response) {
+      const bundle = (await ctx.pluginManager.listBundles()).find(item => item.name === '@deepseek-ai/dsh-cua-bundle')
+      response.end(JSON.stringify({ provider: ctx.get('computerUse')?.providerName ?? null,
+        switchable: bundle?.availability === 'installation' && bundle.optional && bundle.enabled && bundle.error === undefined }))
+    } }))
   ctx.effect(() => ctx.webServer.register({ kind: 'exact', path: '/desktop-smoke-install',
     async handler(_request, response) {
       try {
@@ -156,7 +161,12 @@ export function apply(ctx) {
       throw new Error('desktop runtime: packaged frontend smoke failed')
     }
     const pluginResponse = await fetch(new URL('/desktop-smoke', ready.url), { headers: { cookie } })
-    if (await pluginResponse.text() !== 'plugin route ready') throw new Error('desktop runtime: plugin HTTP route failed')
+    if (!pluginResponse.ok) throw new Error('desktop runtime: plugin HTTP route failed')
+    const expectedProvider = runtime.sharedPackages.some(pkg => pkg.name === '@deepseek-ai/dsh-cua-bundle') ? 'dsh-cua' : null
+    const observed = await pluginResponse.json() as { provider?: string | null; switchable?: boolean }
+    if (observed.provider !== expectedProvider || observed.switchable !== (expectedProvider !== null)) {
+      throw new Error('desktop runtime: Computer Use activation or bundle inventory differs from the packaged variant')
+    }
     const installation = await fetch(new URL('/desktop-smoke-install', ready.url), {
       headers: { cookie }, signal: AbortSignal.timeout(120_000),
     })

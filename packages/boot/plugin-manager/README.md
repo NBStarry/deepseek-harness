@@ -7,7 +7,7 @@ kind: "package-reference"
 
 English | [中文](README.zh.md)
 
-Application-owned profiles supply their bundled package-manager invocation through launcher facts. It takes precedence over `pnpmCommand` for package operations and registry inspection; its environment applies only to those subprocesses.
+Application-owned profiles can offer additional embedded bundles. Switching one off or on changes the selection without downloading or removing it. As with other installation bundles, a same-named profile dependency does not make the embedded files removable. The launcher's bundled package manager takes precedence over `pnpmCommand` for package operations and registry inspection; its environment applies only to those subprocesses.
 
 ## Summary
 

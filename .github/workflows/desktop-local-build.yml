@@ -16,9 +16,9 @@ on:
         type: string
         required: true
       include_cua:
-        description: '在 unsigned mac-arm64 产物中包含 CUA 和 helper（不会激活插件）'
+        description: '内置电脑使用和 helper，供新桌面配置默认启用；取消勾选可构建不带 CUA 的包'
         type: boolean
-        default: false
+        default: true
         required: true
       test_command:
         description: '可选测试命令，留空只构建'

@@ -2440,6 +2440,11 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [],
       },
       {
+        signature: 'readonly installationBundles?: readonly string[]',
+        description: 'Additional bundles this installation ships for switching at runtime, so they are already carried and never fetched. Omission means the installation provides none; this is deliberately not the complete runtime package closure.',
+        parameters: [],
+      },
+      {
         signature: 'readonly overlays: readonly PatchOptions[]',
         description: 'Parsed command-line overlays, applied above profile and home patches.',
         parameters: [],

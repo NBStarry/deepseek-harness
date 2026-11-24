@@ -1,9 +1,11 @@
 /** Pure fixture coverage for opt-in CUA payload verification. */
 import { createHash } from 'node:crypto'
 import { chmodSync, cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import type { WriteStream } from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { finished } from 'node:stream/promises'
 import { expect, it, vi } from 'vitest'
 import { createElectronBuilderConfig } from '../scripts/electron-builder-config.mjs'
 import { readDesktopCuaApplication, resolveDesktopCua, verifyDesktopCuaPackage, verifyDesktopCuaUnpacked } from '../scripts/desktop-cua-native.mjs'
@@ -16,7 +18,8 @@ const helper = `${provider}/native/bin/darwin-arm64`
 const app = 'DSH Computer Use.app'
 const require = createRequire(import.meta.url)
 const builderRequire = createRequire(require.resolve('app-builder-lib/package.json'))
-const asar = builderRequire('@electron/asar') as { createPackage: (source: string, archive: string) => Promise<void> }
+// ASAR 3 ends the output stream before its writes finish, so every fixture call waits for the stream itself.
+const asar = builderRequire('@electron/asar') as { createPackage: (source: string, archive: string) => Promise<WriteStream> }
 
 function makeHelper(directory: string, contents = 'helper'): string {
   const files = new Map([
@@ -69,7 +72,7 @@ async function fixture() {
     mkdirSync(resources, { recursive: true })
     cpSync(root, join(source, 'dsh'), { recursive: true })
     rmSync(join(source, 'dsh', provider, 'native'), { recursive: true })
-    await asar.createPackage(source, join(resources, 'app.asar'))
+    await finished(await asar.createPackage(source, join(resources, 'app.asar')))
     cpSync(join(root, helper), join(resources, 'app.asar.unpacked', 'dsh', helper), { recursive: true })
     return { base, root, resources, source, bundle }
   } catch (error) {
@@ -122,7 +125,7 @@ it('rejects missing and altered ASAR manifests, dependency fields and bundle pat
       }
       if (change === 'missing-patch') rmSync(patch)
       if (change === 'altered-patch') writeFileSync(patch, '- insert: [unexpected]\n')
-      await asar.createPackage(input.source, join(input.resources, 'app.asar'))
+      await finished(await asar.createPackage(input.source, join(input.resources, 'app.asar')))
       await expect(verifyDesktopCuaPackage(input.root, input.resources, () => {})).rejects.toThrow(change === 'runtime-dependency' ? /packaged runtime manifest differs from staged/u : /./u)
     } finally { rmSync(input.base, { recursive: true, force: true }) }
   }
@@ -169,7 +172,7 @@ it('rejects incomplete staged dependency edges even when ASAR matches', async ()
       manifest.dependencies = {}
       writeFileSync(staged, JSON.stringify(manifest))
       writeFileSync(archived, JSON.stringify(manifest))
-      await asar.createPackage(input.source, join(input.resources, 'app.asar'))
+      await finished(await asar.createPackage(input.source, join(input.resources, 'app.asar')))
       await expect(verifyDesktopCuaPackage(input.root, input.resources, () => {})).rejects.toThrow(/dependencies are incomplete/u)
     } finally { rmSync(input.base, { recursive: true, force: true }) }
   }
@@ -194,7 +197,7 @@ it('rejects versions inconsistent with the runtime release even when the ASAR ma
       if (change === 'peer') manifest.peerDependencies[names[2]!] = '2.0.0'
       writeFileSync(staged, JSON.stringify(manifest))
       writeFileSync(archived, JSON.stringify(manifest))
-      await asar.createPackage(input.source, join(input.resources, 'app.asar'))
+      await finished(await asar.createPackage(input.source, join(input.resources, 'app.asar')))
       await expect(verifyDesktopCuaPackage(input.root, input.resources, () => {})).rejects.toThrow()
     } finally { rmSync(input.base, { recursive: true, force: true }) }
   }
@@ -213,7 +216,7 @@ it('rereads an ASAR rewritten after the first inspection', async () => {
   try {
     await verifyDesktopCuaPackage(input.root, input.resources, () => {})
     rmSync(join(input.source, 'dsh/node_modules', names[0]!, 'package.json'))
-    await asar.createPackage(input.source, join(input.resources, 'app.asar'))
+    await finished(await asar.createPackage(input.source, join(input.resources, 'app.asar')))
     await expect(verifyDesktopCuaPackage(input.root, input.resources, () => {})).rejects.toThrow()
   } finally { rmSync(input.base, { recursive: true, force: true }) }
 })

@@ -1,5 +1,6 @@
 /** Launch the Desktop profile through the Web application and report its URL to Electron. */
 
+import { readFileSync } from 'node:fs'
 import { delimiter, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type { PluginOperationRunId } from '@deepseek-ai/dsh-plugin-manager/diagnostic'
@@ -19,6 +20,37 @@ import { installPlatformSessionPublisher } from './platform-session.ts'
 import { installOfficeEngineResolution } from './office-engine.ts'
 import { installOperationDiagnostics } from './operation-diagnostics.ts'
 
+/** Prepared runtime manifest identity; any other package.json is not this Desktop installation. */
+const INSTALLATION_RUNTIME_PACKAGE = '@deepseek-ai/dsh-desktop-runtime'
+/** Bundle this installation carries so Plugins can switch it on and off without downloading. */
+const SWITCHABLE_CUA_BUNDLE = '@deepseek-ai/dsh-cua-bundle'
+
+/**
+ * Read switchable installation bundles from the prepared runtime's own manifest.
+ * Only that exact manifest records what the application ships; profile and outer
+ * node_modules never decide it.
+ * @param runtimeDir - Prepared dsh runtime root handed over by Electron.
+ * @returns the bundles this installation provides, or undefined when the manifest does not.
+ */
+function installationBundles(runtimeDir: string): readonly string[] | undefined {
+  let manifest: unknown
+  try {
+    manifest = JSON.parse(readFileSync(join(runtimeDir, 'package.json'), 'utf8'))
+  } catch {
+    return undefined
+  }
+  if (typeof manifest !== 'object' || manifest === null) return undefined
+  const name: unknown = 'name' in manifest ? manifest.name : undefined
+  const version: unknown = 'version' in manifest ? manifest.version : undefined
+  const dependencies: unknown = 'dependencies' in manifest ? manifest.dependencies : undefined
+  if (name !== INSTALLATION_RUNTIME_PACKAGE || typeof version !== 'string'
+    || typeof dependencies !== 'object' || dependencies === null || !(SWITCHABLE_CUA_BUNDLE in dependencies)) {
+    return undefined
+  }
+  const carried: unknown = dependencies[SWITCHABLE_CUA_BUNDLE]
+  return carried === version ? [SWITCHABLE_CUA_BUNDLE] : undefined
+}
+
 async function main(): Promise<void> {
   const runId = randomUUID() as PluginOperationRunId
   if (process.connected) process.send?.({ type: 'starting', runId }, (error) => { if (error !== null) console.error(error) })
@@ -26,6 +58,7 @@ async function main(): Promise<void> {
   const projectDir = process.argv[3] as string
   installOfficeEngineResolution(runtimeDir)
   const installAnchor = join(runtimeDir, 'node_modules', '@deepseek-ai', 'dsh', 'package.json')
+  const carriedBundles = installationBundles(runtimeDir)
   const profile = loadProfileDirectory('dsh', projectDir, installAnchor)
   reportSkippedBundles('dsh', profile)
   const application = runProfile({
@@ -34,6 +67,7 @@ async function main(): Promise<void> {
     resolvedProfile: { profile, installAnchor },
     patchFiles: [],
     args: ['--no-open', '--host', '127.0.0.1', '--port', '0'],
+    ...(carriedBundles === undefined ? {} : { installationBundles: carriedBundles }),
     ...(process.argv[5] === undefined ? {} : {
       packageManager: {
         command: process.execPath,

@@ -8,7 +8,27 @@ import { fileURLToPath } from 'node:url'
 import { finished } from 'node:stream/promises'
 import { expect, it, onTestFinished } from 'vitest'
 
-it.each([false, true])('settles startup after parent IPC disconnect (boot failure: %s)', async (fail) => {
+const RUNTIME_PACKAGE = '@deepseek-ai/dsh-desktop-runtime'
+const CUA_BUNDLE = '@deepseek-ai/dsh-cua-bundle'
+const RUNTIME_VERSION = '0.0.0-test'
+
+interface BootFact {
+  packageManager: { command: string; args: string[]; env: Record<string, string> }
+  installationBundles?: string[]
+}
+
+/**
+ * Prepare one throwaway built-Host installation and run it until it disconnects.
+ * @param options - boot failure switch and the prepared runtime manifest to hand over.
+ * @returns the startup facts the Host published, its stderr, and its exit status.
+ */
+async function launchHost(options: { fail?: boolean; runtimeManifest?: unknown } = {}): Promise<{
+  boot: BootFact
+  root: string
+  stderr: string
+  exitCode: number | null
+  signalCode: NodeJS.Signals | null
+}> {
   const root = mkdtempSync(join(tmpdir(), 'desktop-disconnect-'))
   const modules = join(root, 'node_modules', '@deepseek-ai')
   const hostDirectory = fileURLToPath(new URL('../../desktop-host/', import.meta.url))
@@ -26,7 +46,7 @@ it.each([false, true])('settles startup after parent IPC disconnect (boot failur
     writeFileSync(join(modules, name, 'package.json'), '{"type":"module","exports":"./index.js"}')
     writeFileSync(join(modules, name, 'index.js'), source)
   }
-  writeFileSync(join(root, 'package.json'), '{"type":"module"}')
+  writeFileSync(join(root, 'package.json'), JSON.stringify(options.runtimeManifest ?? { type: 'module' }))
   writeFileSync(join(modules, 'dsh-app-boot', 'package.json'), '{"type":"module","exports":"./index.js"}')
   writeFileSync(join(modules, 'dsh-app-boot', 'index.js'), `
     export class StartupError extends Error {}
@@ -38,9 +58,9 @@ it.each([false, true])('settles startup after parent IPC disconnect (boot failur
   writeFileSync(join(modules, 'dsh', 'profile-boot.js'), `
     import { writeFileSync } from 'node:fs';
     export function runProfile(options) {
-      process.send({ type: 'booting', packageManager: options.packageManager });
+      process.send({ type: 'booting', packageManager: options.packageManager, installationBundles: options.installationBundles });
       return new Promise((resolve, reject) => process.once('disconnect', () => {
-        if (${String(fail)}) { reject(new Error('fixture boot failure')); return; }
+        if (${String(options.fail === true)}) { reject(new Error('fixture boot failure')); return; }
         resolve({ ctx: { plugin: async () => {}, effect: () => {}, on: () => {}, inject: () => {},
           connection: { authenticatedUrl: value => value }, webServer: { port: 19387 } },
           shutdown: { shutdown: async () => writeFileSync(${JSON.stringify(join(root, 'stopped'))}, 'stopped') } });
@@ -62,32 +82,52 @@ it.each([false, true])('settles startup after parent IPC disconnect (boot failur
     rmSync(root, { recursive: true, force: true })
   })
   try {
-    const boot = await new Promise<{
-      packageManager: { command: string; args: string[]; env: Record<string, string> }
-    }>((resolve, reject) => {
+    const boot = await new Promise<BootFact>((resolve, reject) => {
       child.on('message', (message) => {
         if (typeof message === 'object' && message !== null && 'type' in message && message.type === 'booting' && 'packageManager' in message) {
-          resolve(message as { packageManager: { command: string; args: string[]; env: Record<string, string> } })
+          resolve(message as BootFact)
         }
       })
       child.once('error', reject)
       child.once('exit', (code) => { reject(new Error(`Host exited before booting: ${String(code)} ${stderr}`)) })
     })
-    expect(boot.packageManager.command).toBe(process.execPath)
-    expect(boot.packageManager.args).toEqual(['--expose-internals', pnpm])
-    expect(boot.packageManager.env.ELECTRON_RUN_AS_NODE).toBe('1')
-    expect(boot.packageManager.env.PATH).toBe(`${nodeBin}${delimiter}${process.env.PATH ?? ''}`)
     child.disconnect()
     const exitCode = await exited
     await drained
-    expect(child.signalCode).toBeNull()
-    expect(exitCode, stderr).toBe(fail ? 1 : 0)
-    expect(stderr).not.toContain('ERR_IPC_CHANNEL_CLOSED')
-    expect(stderr).not.toContain('Unhandled')
-    if (fail) expect(stderr).toContain('fixture boot failure')
-    else expect(readFileSync(join(root, 'stopped'), 'utf8')).toBe('stopped')
+    return { boot, root, stderr, exitCode, signalCode: child.signalCode }
   } finally {
     if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
     await Promise.all([exited, drained])
   }
+}
+
+it.each([false, true])('settles startup after parent IPC disconnect (boot failure: %s)', async (fail) => {
+  const { boot, root, stderr, exitCode, signalCode } = await launchHost({ fail })
+  expect(boot.packageManager.command).toBe(process.execPath)
+  expect(boot.packageManager.args).toEqual(['--expose-internals', join(root, 'bundled-pnpm.mjs')])
+  expect(boot.packageManager.env.ELECTRON_RUN_AS_NODE).toBe('1')
+  expect(boot.packageManager.env.PATH).toBe(`${join(root, 'bin')}${delimiter}${process.env.PATH ?? ''}`)
+  expect(signalCode).toBeNull()
+  expect(exitCode, stderr).toBe(fail ? 1 : 0)
+  expect(stderr).not.toContain('ERR_IPC_CHANNEL_CLOSED')
+  expect(stderr).not.toContain('Unhandled')
+  if (fail) expect(stderr).toContain('fixture boot failure')
+  else expect(readFileSync(join(root, 'stopped'), 'utf8')).toBe('stopped')
+})
+
+const dependencies = (carriedCua: boolean, cuaVersion = RUNTIME_VERSION) => ({
+  '@deepseek-ai/dsh': RUNTIME_VERSION,
+  '@deepseek-ai/dsh-desktop-host': RUNTIME_VERSION,
+  ...(carriedCua ? { [CUA_BUNDLE]: cuaVersion } : {}),
+})
+
+it.each([
+  ['the prepared runtime manifest carries the CUA bundle', { name: RUNTIME_PACKAGE, version: RUNTIME_VERSION, dependencies: dependencies(true) }, [CUA_BUNDLE]],
+  ['the prepared runtime manifest omits the CUA bundle', { name: RUNTIME_PACKAGE, version: RUNTIME_VERSION, dependencies: dependencies(false) }, undefined],
+  ['the manifest belongs to another runtime package', { name: 'other-runtime', version: RUNTIME_VERSION, dependencies: dependencies(true) }, undefined],
+  ['the carried CUA bundle has a different version', { name: RUNTIME_PACKAGE, version: RUNTIME_VERSION, dependencies: dependencies(true, '0.0.0-other') }, undefined],
+] as const)('publishes installation bundles only when %s', async (_case, runtimeManifest, expected) => {
+  const { boot, exitCode, stderr } = await launchHost({ runtimeManifest })
+  expect(exitCode, stderr).toBe(0)
+  expect(boot.installationBundles).toEqual(expected)
 })

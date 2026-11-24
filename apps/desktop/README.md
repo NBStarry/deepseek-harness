@@ -173,7 +173,7 @@ The signed `resources/app.asar/dsh/desktop-runtime.json` binds the shell version
 4. The main application’s Plugins page uses the shared [plugin manager](../../packages/boot/plugin-manager/README.md) against the Desktop profile. Package operations use bundled pnpm with normal user and profile configuration.
 5. The shared manager owns installation errors, activation, and restart requirements. Native recovery can disable third-party bundles even when the Host cannot start.
 
-The [Web plugin UI](../../packages/client/ui-plugin-manager/README.md) owns the management interface. Desktop profile initialization and recovery preserve installed plugin files.
+A fresh profile in a local Apple Silicon build selects [Computer Use](../../packages/experimental/cua-bundle/README.md) when the app includes its native helper. Turn it off in Plugins. Upgrades and recovery never turn it back on; other builds do not download it on first launch. Accessibility, Screen Recording, and consent for each target application remain separate.
 
 Desktop fatal failures use native recovery with Exit, Restart, Disable third-party plugins, back up profile patch, and restart, and Get diagnostic report. See [recovery and diagnostics](docs/diagnostics/README.md) for triggers, report locations and contents, recent operation records, and shutdown limits.
 

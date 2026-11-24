@@ -7,11 +7,11 @@ import { test } from 'node:test'
 const require = createRequire(import.meta.url)
 const yaml = require('js-yaml')
 
-test('CUA opt-in reaches packaging and is recorded', () => {
+test('the unsigned Apple Silicon candidate includes CUA by default and records the build choice', () => {
   const workflow = yaml.load(readFileSync(new URL('../../../.github/workflows/desktop-local-build.yml', import.meta.url), 'utf8'))
   const option = workflow.on.workflow_dispatch.inputs.include_cua
   assert.equal(option.type, 'boolean')
-  assert.equal(option.default, false)
+  assert.equal(option.default, true)
   const steps = workflow.jobs.build.steps
   const packaging = steps.find(step => step.name === 'Package unsigned desktop app')
   assert.equal(packaging.env.DSH_DESKTOP_INCLUDE_CUA, "${{ inputs.include_cua && '1' || '' }}")

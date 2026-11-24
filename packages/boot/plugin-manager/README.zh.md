@@ -7,7 +7,7 @@ kind: "package-reference"
 
 [English](README.md) | 中文
 
-应用拥有的 profile 通过启动器信息提供内置包管理器调用方式。它在包操作和 registry 检查中优先于 `pnpmCommand`；其环境仅应用于这些子进程。
+应用可以为 profile 提供额外的内置组合包。关闭或重新启用内置组合包只修改选择，不会下载或移除包文件。与其他内置组合包一样，即使 profile 已声明同名依赖，也不能从插件页移除内置文件。启动器的内置包管理器在包操作和 registry 检查中优先于 `pnpmCommand`；其环境仅应用于这些子进程。
 
 ## 概述
 

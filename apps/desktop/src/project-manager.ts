@@ -13,7 +13,7 @@ import {
   writeFileSync,
   writeSync,
 } from 'node:fs'
-import { join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import {
   DESKTOP_HOST_PACKAGE,
   desktopCorePackageOverrides,
@@ -21,7 +21,7 @@ import {
 } from './core-package-set.ts'
 import type { DesktopPaths } from './paths.ts'
 import type { DesktopRelease } from './release.ts'
-import { readDesktopRuntime } from './runtime-tree.ts'
+import { readDesktopRuntime, type DesktopRuntimeDescriptor } from './runtime-tree.ts'
 import { initProfile, removeLinkProjections, sanitizeProfile } from '@deepseek-ai/dsh-app-boot'
 import { PROFILE_TEMPLATES, type ProfileTemplate } from '@deepseek-ai/dsh-official-bundles'
 
@@ -64,7 +64,7 @@ export class DesktopProjectManager {
    */
   constructor(
     readonly paths: DesktopPaths,
-    readonly runtime: { readonly dsh: string },
+    readonly runtime: { readonly dsh: string; readonly packaged?: boolean },
   ) {}
 
   /**
@@ -81,10 +81,9 @@ export class DesktopProjectManager {
    */
   async applyRelease(): Promise<void> {
     await this.withLock(() => {
-      // Validation only: an unreadable or mismatched runtime descriptor stops preparation before the Host starts.
-      readDesktopRuntime(this.runtime.dsh)
+      const descriptor = readDesktopRuntime(this.runtime.dsh)
       migrateProfileSettings(this.paths.profile)
-      createPluginProfile(this.paths.profile)
+      createPluginProfile(this.paths.profile, this.runtime.packaged ? { root: this.runtime.dsh, descriptor } : undefined)
       removeLinkProjections(this.paths.profile)
     })
   }
@@ -169,7 +168,49 @@ export function createDevelopmentProjectMetadata(projectDir: string, release: De
   writeFileSync(join(projectDir, 'pnpm-workspace.yaml'), workspaceFile(), { mode: 0o600 })
 }
 
-/** Create the first external plugin profile without running a package manager. */
-export function createPluginProfile(projectDir: string): void {
-  initProfile(projectDir, WEB_PROFILE.bundles)
+const CUA_BUNDLE = '@deepseek-ai/dsh-cua-bundle'
+const CUA_PROVIDER = '@deepseek-ai/dsh-experimental-cua-macos'
+
+/** Native payloads beside an app.asar archive live on the physical file system as its `app.asar.unpacked` sibling. */
+function physicalRuntimeRoot(root: string): string {
+  const parent = dirname(root)
+  return basename(parent) === 'app.asar' ? join(`${parent}.unpacked`, basename(root)) : root
+}
+
+/** Only the immutable application supplies first-launch defaults, never a profile-installed package. */
+function embedsComputerUse(root: string, descriptor: DesktopRuntimeDescriptor): boolean {
+  if (descriptor.platform !== 'darwin' || descriptor.arch !== 'arm64') return false
+  const carries = (name: string) => descriptor.sharedPackages.some(pkg => pkg.name === name && pkg.version === descriptor.release.version)
+  if (!carries(CUA_BUNDLE) || !carries(CUA_PROVIDER)) return false
+  const physicalRoot = physicalRuntimeRoot(root)
+  const bin = `node_modules/${CUA_PROVIDER}/native/bin/darwin-arm64`
+  const receipt = join(physicalRoot, bin, 'current.json')
+  if (!existsSync(receipt)) return false
+  let selected: unknown
+  try { selected = JSON.parse(readFileSync(receipt, 'utf8')) } catch (error) {
+    console.warn('Desktop skipped Computer Use: cannot read the packaged helper receipt.', error)
+    return false
+  }
+  if (typeof selected !== 'object' || selected === null || !('bundle' in selected)
+    || typeof selected.bundle !== 'string' || !/^[a-f0-9]{64}$/u.test(selected.bundle)) {
+    console.warn('Desktop skipped Computer Use: invalid packaged helper generation.')
+    return false
+  }
+  const path = `${bin}/${selected.bundle}/DSH Computer Use.app/Contents/MacOS/dsh-cua-native`
+  if (!descriptor.files.some(file => file.path === path && file.executable && file.bytes > 0)) return false
+  // ASAR metadata describes the logical tree; the helper must also be a real executable file beside it.
+  const helper = lstatSync(join(physicalRoot, path), { throwIfNoEntry: false })
+  return helper !== undefined && helper.isFile() && !helper.isSymbolicLink()
+    && helper.size > 0 && (helper.mode & 0o111) !== 0
+}
+
+/**
+ * Initialize missing profile files. Only a new profile can inherit the packaged Computer Use selection.
+ * @param projectDir - External Desktop profile directory.
+ * @param packaged - Immutable application root and its validated build descriptor; absent in development.
+ */
+export function createPluginProfile(projectDir: string, packaged?: { root: string; descriptor: DesktopRuntimeDescriptor }): void {
+  const includeCua = packaged !== undefined && !existsSync(join(projectDir, 'package.json'))
+    && embedsComputerUse(packaged.root, packaged.descriptor)
+  initProfile(projectDir, includeCua ? [...WEB_PROFILE.bundles, CUA_BUNDLE] : WEB_PROFILE.bundles)
 }

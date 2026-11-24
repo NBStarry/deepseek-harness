@@ -33,7 +33,9 @@ let restoreGitCommandLineConfig: () => void
 beforeAll(() => { restoreGitCommandLineConfig = isolateGitCommandLineConfig() })
 afterAll(() => { restoreGitCommandLineConfig() })
 
-async function fixture(reload: 'live' | 'startup' = 'live', overlay = false, prepare?: (ctx: Context) => void, config: Config = {}, packageManager?: ProfileContext['packageManager'], prepareFiles?: (dir: string) => void, sourceInstallation = false) {
+async function fixture(reload: 'live' | 'startup' = 'live', overlay = false, prepare?: (ctx: Context) => void, config: Config = {},
+  packageManager?: ProfileContext['packageManager'], prepareFiles?: (dir: string) => void, sourceInstallation = false,
+  installationBundles?: ProfileContext['installationBundles']) {
   const temporaryHome = mkdtempSync(join(tmpdir(), 'plugin-manager-'))
   let owner: Context | undefined
   onTestFinished(async () => { await owner?.fiber.dispose(); rmSync(temporaryHome, { recursive: true, force: true }) })
@@ -66,6 +68,7 @@ async function fixture(reload: 'live' | 'startup' = 'live', overlay = false, pre
   const overlays: PatchOptions[] = overlay ? [{ id: 'managed', disabled: true }] : []
   const profile: ProfileContext = {
     name: 'test',
+    ...(installationBundles === undefined ? {} : { installationBundles }),
     ...(packageManager === undefined ? {} : { packageManager }),
     startedBundles: loadProfileDirectory('test', dir, anchor).layers.map(layer => layer.packageName),
     dir, patchPath: join(dir, 'cordis.patch.yml'), installAnchor: anchor, cwd: home, home,
@@ -405,6 +408,31 @@ it('recomposes the remaining layers while another bundle is broken and mounts it
   expect(await manager.setBundleEnabled('another', false)).toMatchObject({ application: 'applied' })
   expect([...ctx.loader.entries()].find(entry => entry.id === 'include:managed')?.fiber?.state).toBe(2)
   expect((await manager.listBundles()).find(row => row.name === 'extra')?.error).toBeUndefined()
+})
+
+it('switches a catalog bundle provided by the launcher without installing or removing it', async () => {
+  const name = '@deepseek-ai/dsh-cua-bundle'
+  const { manager, dir, profile, bundle } = await fixture('startup', false, undefined, {}, undefined, undefined, false, [name])
+  bundle(name, [], profile.home)
+  const packageDir = join(profile.home, 'node_modules', name)
+  const metadata = readProfileManifest('test', packageDir)
+  metadata.dsh = { bundle: { patch: './cordis.patch.yml', listedByDefault: false } }
+  writeFileSync(join(packageDir, 'package.json'), JSON.stringify(metadata))
+  const initial = readProfileManifest('test', dir)
+  const subprocess = vi.spyOn(operations, 'runProfilePnpm')
+  onTestFinished(() => { subprocess.mockRestore() })
+  for (const enabled of [true, false, true]) {
+    expect(await manager.setBundleEnabled(name, enabled)).toMatchObject({ changed: true, application: 'restart-required' })
+    const row = (await manager.listBundles()).find(item => item.name === name)
+    expect(row).toMatchObject({ enabled, availability: 'installation', optional: true, installed: false, removable: false, listedByDefault: false })
+    expect(row?.error).toBeUndefined()
+    expect(row?.installTarget).toBeUndefined()
+    expect(readProfileManifest('test', dir).dependencies).toEqual(initial.dependencies)
+    expect(loadProfileDirectory('test', dir, profile.installAnchor).layers.some(layer => layer.packageName === name)).toBe(enabled)
+  }
+  expect(await manager.inspect(name)).toMatchObject({ status: 'refused', problem: 'already-installed' })
+  expect(await manager.removeBundle(name)).toMatchObject({ changed: false, error: { code: 'not-removable' } })
+  expect(subprocess).not.toHaveBeenCalled()
 })
 
 it('lists bundle versions and current-profile plugin targets', async () => {

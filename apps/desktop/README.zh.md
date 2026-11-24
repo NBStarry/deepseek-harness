@@ -173,7 +173,7 @@ macOS 上自定义菜单保留 Electron 的标准 Window 菜单及应用隐藏�
 4. 主应用的“插件”页面通过共享[插件管理器](../../packages/boot/plugin-manager/README.zh.md)操作 Desktop profile。包操作使用内置 pnpm 及正常的用户和 profile 配置。
 5. 共享管理器负责安装错误、激活和重启要求。即使 Host 无法启动，原生恢复仍可禁用第三方 bundle。
 
-[Web 插件 UI](../../packages/client/ui-plugin-manager/README.zh.md)负责管理界面。Desktop profile 初始化和恢复保留已安装插件文件。
+Apple Silicon 本地构建内置原生 helper 时，新桌面配置默认启用[电脑使用](../../packages/experimental/cua-bundle/README.zh.md)，可在“插件”中关闭。升级和恢复不会将其重新打开；未内置的版本不会在首次启动时下载它。辅助功能、屏幕录制和各目标应用的访问许可仍需单独授权。
 
 Desktop 的致命故障通过原生恢复对话框提供退出、重启、禁用第三方插件并备份 profile patch 后重启，以及获取诊断报告。触发范围、报告位置与内容、近期操作记录和退出限制见[故障恢复与诊断](docs/diagnostics/README.zh.md)。
 
