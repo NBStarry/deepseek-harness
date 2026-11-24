@@ -1,7 +1,7 @@
 /** Source-checkout preparation and installed macOS application resolution. */
 import { constants } from 'node:fs'
 import { access, mkdir, readFile } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { join, resolve, sep } from 'node:path'
 import { withFileLock } from '@deepseek-ai/dsh-atomic-write'
 import type { SubprocessOutcome, SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
 import { z } from 'zod'
@@ -105,7 +105,10 @@ export async function buildNativeExecutable(spec: NativeBuildSpec): Promise<stri
  */
 export async function prepareNativeExecutable(spec: NativeBuildSpec): Promise<string> {
   if (await isSourcePackage(spec.packageRoot)) return buildNativeExecutable(spec)
-  const executable = await nativeExecutablePath(join(spec.packageRoot, 'native', 'bin', `darwin-${spec.architecture}`))
+  const components = spec.packageRoot.split(sep)
+  const archive = components.lastIndexOf('app.asar')
+  if (archive !== -1) components[archive] = 'app.asar.unpacked'
+  const executable = await nativeExecutablePath(join(components.join(sep), 'native', 'bin', `darwin-${spec.architecture}`))
   spec.signal.throwIfAborted()
   return executable
 }

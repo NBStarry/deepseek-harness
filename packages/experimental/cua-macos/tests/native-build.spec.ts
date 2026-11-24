@@ -100,6 +100,15 @@ it('uses an installed application without compiling or re-signing it', async () 
   await expect(prepareNativeExecutable(f.spec)).rejects.toThrow()
 })
 
+it('resolves an Electron ASAR provider through its unpacked helper without compilation', async () => {
+  const f = await fixture()
+  const archived = join(f.root, 'Contents/Resources/app.asar/dsh/node_modules/@deepseek-ai/dsh-experimental-cua-macos')
+  const unpacked = join(f.root, 'Contents/Resources/app.asar.unpacked/dsh/node_modules/@deepseek-ai/dsh-experimental-cua-macos')
+  const executable = await publish(join(unpacked, 'native/bin/darwin-arm64'), f.output)
+  expect(await prepareNativeExecutable({ ...f.spec, packageRoot: archived })).toBe(executable)
+  expect(f.spawn).not.toHaveBeenCalled()
+})
+
 it.each(['../outside', '/absolute', '', 'a'.repeat(63), 'A'.repeat(64)])('rejects an invalid installed generation %s', async (bundle) => {
   const f = await fixture()
   await mkdir(f.directory, { recursive: true })
