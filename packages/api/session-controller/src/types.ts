@@ -1,6 +1,6 @@
 /** Browser-safe request, result, and lifecycle vocabulary for the Session Remote service. */
 
-import type {} from '@deepseek-ai/dsh-agent/types'
+import type { Agent } from '@deepseek-ai/dsh-agent/types'
 import type { NativeFileApplication } from '@deepseek-ai/dsh-native-command/types'
 import type {
   ImageAttachmentLimits, ImageAttachmentRef, ImageMediaType,
@@ -662,6 +662,13 @@ export type SessionProjectionFrame =
 
 declare module '@deepseek-ai/cordis' {
   interface Events {
+    /**
+     * An authenticated browser peer's prompt entered this live inbox, before its first claim.
+     * @mode emit
+     * @param agent - Exact Agent that accepted the prompt.
+     * @param messageId - Host-assigned identity of the inserted message.
+     */
+    'api-session/browser-prompt'(agent: Agent, messageId: MessageId): void
     /**
      * A Session became visible or its Agent was created or disposed.
      * Consumers upsert the summary and replace its current running and availability state.

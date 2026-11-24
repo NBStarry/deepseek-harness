@@ -485,7 +485,8 @@ export class SessionController extends TypertRemoteService {
       ...(clientTimeZone === undefined ? {} : { clientTimeZone }),
       ...(principal === undefined ? {} : { principal }),
     }
-    return this.commands.prompt(request, source)
+    const peer = this.ctx.invocation?.peer
+    return this.commands.prompt(request, source, peer !== undefined && peer === this.ctx.get('connection')?.browserPeer)
   }
 
   /**

@@ -5,6 +5,8 @@
       name: '@deepseek-ai/dsh-experimental-cua-macos'
       disabled: !!js process.platform !== 'darwin'
       config:
-        agentPreset: [ptc, standard, cordis]
+        # The Desktop host drops the preset filter (false) because its interactive
+        # input admission decides availability; other hosts keep the preset scope.
+        agentPreset: !!js "ctx.get('profileContext')?.name === 'desktop' ? false : ['ptc', 'standard', 'cordis']"
     - id: ui-cua
       name: '@deepseek-ai/dsh-cua'

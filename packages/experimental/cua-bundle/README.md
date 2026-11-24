@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Enable macOS Computer Use from Plugins for existing and new PTC, Standard, and Creator sessions. Windows support is in development. This bundle remains in `experimental` until that support is complete, then moves to the `computer-use` group. It is off by default and hidden from the default plugin lists until enabled or separately installed; disabled profiles prepare no native components and register neither CUA tools nor their model guidance.
+Computer Use lets a desktop conversation interact with Mac applications in any preset. The [local Apple Silicon Desktop build](../../../apps/desktop/README.md) selects it for new profiles when the helper is embedded. Other profiles opt in. Turn it off in Plugins to remove the tool and its guidance. Windows has no native provider.
 
 ## Table of Contents
 
@@ -24,7 +24,7 @@ Enable macOS Computer Use from Plugins for existing and new PTC, Standard, and C
 <a id="use-this-package"></a>
 ## Use this package
 
-In macOS Desktop, open **Plugins → Add plugin**, enter `@deepseek-ai/dsh-cua-bundle`, choose **Install**, then **Enable now**. DSH targets the official version matching its runtime for installation into the profile. Release packaging requires a signed and notarized helper, but the published `0.2.2-alpha.2` macOS provider lacks its native helper; reinstalling that version alone does not restore Computer Use. Use a compatible release with the prepared helper when available. Source Web and development Desktop link the workspace bundle and prepare an ad-hoc helper when enabled. Open Computer Use details and grant Accessibility and Screen Recording to `DSH Computer Use.app`. Disabled installed bundles remain available for management. For source Web, run these commands from the repository root:
+If Computer Use is not already included or installed, open **Plugins → Add plugin** in macOS Desktop, enter `@deepseek-ai/dsh-cua-bundle`, choose **Install**, then **Enable now**. DSH targets the official version matching its runtime for installation into the profile. Release packaging requires a signed and notarized helper, but the published `0.2.2-alpha.2` macOS provider lacks its native helper; reinstalling that version alone does not restore Computer Use. Use a compatible release with the prepared helper when available. Source Web and development Desktop link the workspace bundle and prepare an ad-hoc helper when enabled. Open Computer Use details and grant Accessibility and Screen Recording to `DSH Computer Use.app`. Disabled installed bundles remain available for management. For source Web, run these commands from the repository root:
 
 ```sh
 pnpm run build
@@ -51,7 +51,7 @@ Explicit activation runs a read-only permission check, which may start a helper 
 <details>
 <summary>Maintainer details</summary>
 
-The bundle patch mounts the native provider and permission UI with `agentPreset: [ptc, standard, cordis]` on the provider. Using the exported `cordis.patch.yml` directly as an overlay bypasses bundle admission; its row-level condition skips the optional macOS provider on other Hosts. Shared entries alone do not provide computer control. Existing Agent scopes register the tools without changing preset documents. The detail-page action uses the existing settings form to save `agent-preset-registry.selectedDefault: ptc` only when clicked. [CUA](../cua/README.md) owns registration and disposal.
+The bundle mounts the native provider and permission UI. Its preset filter is off on Desktop; the provider admits only interactive input. Other macOS profiles use `agentPreset: [ptc, standard, cordis]`. Using the exported `cordis.patch.yml` directly as an overlay bypasses bundle admission; its row-level condition skips the optional macOS provider on other Hosts. Shared entries alone do not provide computer control. Existing Agent scopes register the tools without changing preset documents. The detail-page action uses the existing settings form to save `agent-preset-registry.selectedDefault: ptc` only when clicked. [CUA](../cua/README.md) owns registration and disposal.
 
 </details>
 
@@ -71,7 +71,7 @@ The bundle patch mounts the native provider and permission UI with `agentPreset:
 
 #### What the model sees
 
-PTC sessions call `cua` through `run_code`; Standard and Creator sessions can also call it directly. All three receive CUA guidance. Disabling the bundle removes the tool and guidance without changing the executor. Other presets receive neither. [CUA](../cua/README.md) and [PTC](../../ptc-runtime/ptc-runtime-node/README.md#persistent-repl) own the interfaces and output semantics.
+On Desktop, an interactive session can call `cua` directly or through `run_code` when its executor supports both. PTC-only sessions use `run_code`. An unattended turn or child agent gets neither the binding nor its instructions. Disabling the bundle removes Computer Use without changing the executor. [CUA](../cua/README.md) and [PTC](../../ptc-runtime/ptc-runtime-node/README.md#persistent-repl) own the interfaces and output semantics.
 
 #### Token effect
 

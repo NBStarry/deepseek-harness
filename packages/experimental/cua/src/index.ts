@@ -22,7 +22,8 @@ import { CuaCoordinates } from './coordinates.ts'
 import { createScope, type Scope } from '@deepseek-ai/dsh-scope'
 import type {} from '@deepseek-ai/dsh-agent-preset-registry'
 import type { PromptSection } from '@deepseek-ai/dsh-system-prompt'
-import type { ToolDefinition, ToolExecution } from '@deepseek-ai/dsh-tools'
+import type { ToolActivationContext, ToolDefinition, ToolExecution } from '@deepseek-ai/dsh-tools'
+import { desktopInteractiveAdmission } from './interactive-input.ts'
 import type {} from '@deepseek-ai/dsh-subprocess'
 import type {} from '@deepseek-ai/dsh-computer-use'
 import type {} from '@deepseek-ai/dsh-ptc-runtime'
@@ -219,6 +220,12 @@ export function installCua(ctx: Context, config: CuaConfig, backend: CuaBackend)
       for (const result of [...await permissions, ...results, ...releases]) if (result.status === 'rejected') errors.push(result.reason)
       if (errors.length > 0) throw new AggregateError(errors, 'dsh-cua helper cleanup failed')
     }
+    // Desktop requires a prompt from its authenticated chat connection; other hosts retain their preset filters.
+    const admission = desktopInteractiveAdmission(ctx)
+    if (admission !== undefined) yield () => { admission.dispose() }
+    const interactiveOptions = admission === undefined
+      ? undefined
+      : { when: ({ agent }: ToolActivationContext): boolean => admission.visible(agent) }
     const callNative = async (request: CuaOperation, execution: Readonly<CuaExecution>) => {
       const { method, params: parsedParams } = request
       const params = execution.coordinates.parameters(request)
@@ -287,6 +294,7 @@ export function installCua(ctx: Context, config: CuaConfig, backend: CuaBackend)
       async execute(args, execution) {
         const request = Request.parse(args)
         const agent = executionAgent(execution)
+        admission?.require(execution, tool)
         execution.signal.throwIfAborted()
         lifetime.signal.throwIfAborted()
         const owner = ownerFor(agent)
@@ -326,7 +334,10 @@ export function installCua(ctx: Context, config: CuaConfig, backend: CuaBackend)
     }
     const prompt: PromptSection = {
       name: 'computer-use:dsh-cua', order: ctx.systemPrompt.getSectionOrder('TOOL_COMPUTER_USE'),
-      text: () => {
+      text: ({ scope, toolSet }) => {
+        // Guidance follows the admitted tool set: a step that cannot call the tool
+        // must not carry its instructions, and a replaced registration hides them too.
+        if (admission !== undefined && toolSet?.view(scope).get(tool.name) !== tool) return ''
         const runtime = ctx.get('ptcRuntime')
         return !runtime?.retainsState ? guidance : `${guidance}
 
@@ -339,7 +350,7 @@ var cua = connectCua(() => tools.cua, text => console.log(text));
       },
     }
     const register = (scope: Context): void => {
-      scope.tools.register(tool)
+      scope.tools.register(tool, interactiveOptions)
       scope.systemPrompt.section(prompt)
     }
     if (config.agentPreset === false) register(ctx)

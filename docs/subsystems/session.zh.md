@@ -1273,6 +1273,26 @@ A Session became visible or its Agent was created or disposed. Consumers upsert 
 
 Source: [`packages/api/session-controller/src/types.ts`](../../packages/api/session-controller/src/types.ts)
 
+<a id="api-sessionbrowser-prompt--emit"></a>
+
+#### `api-session/browser-prompt` — emit
+
+An authenticated browser peer's prompt entered this live inbox, before its first claim.
+
+```ts cordis-catalog
+/**
+ * An authenticated browser peer's prompt entered this live inbox, before its first claim.
+ * @mode emit
+ * @param agent - Exact Agent that accepted the prompt.
+ * @param messageId - Host-assigned identity of the inserted message.
+ */
+'api-session/browser-prompt'(agent: Agent, messageId: MessageId): void
+```
+
+Types: [Agent](core.zh.md) · [MessageId](llm-streaming.zh.md)
+
+Source: [`packages/api/session-controller/src/types.ts`](../../packages/api/session-controller/src/types.ts)
+
 <a id="api-sessionerror--emit"></a>
 
 #### `api-session/error` — emit

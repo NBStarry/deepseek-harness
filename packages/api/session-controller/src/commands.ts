@@ -299,9 +299,10 @@ export class SessionCommandController {
    * has already validated the content and built the durable message source.
    * @param request - Session identity, prompt content, and delivery mode.
    * @param source - the `user-rpc` source recorded on the accepted message.
+   * @param fromBrowser - whether this submission came from the authenticated browser peer.
    * @returns acknowledgement that the Agent accepted the prompt.
    */
-  async prompt(request: SessionPromptRequest, source: MessageSource): Promise<SessionPromptValue> {
+  async prompt(request: SessionPromptRequest, source: MessageSource, fromBrowser = false): Promise<SessionPromptValue> {
     const agent = await this.resolveAgent(request.sessionId)
     if (hasPromptRequest(agent, request.requestId)) return { accepted: true }
     const admission = resolvePromptFileReceipts(
@@ -335,9 +336,15 @@ export class SessionCommandController {
           )
         }
         using binding = this.ctx.fileUploads.bindPrompt(agent, admission.receiptIds, request.requestId)
-        if (request.mode === 'steer') agent.steer(message)
-        else agent.followup(message)
-        binding.commit()
+        // The driver can claim synchronously in followup(). Publish only the committed insertion.
+        const stop = fromBrowser ? agent.ctx.on('agent/inbox/inserted', ({ agent: owner, message: inserted }) => {
+          if (owner === agent && inserted.id === message.id) this.ctx.emit('api-session/browser-prompt', agent, inserted.id)
+        }) : undefined
+        try {
+          if (request.mode === 'steer') agent.steer(message)
+          else agent.followup(message)
+          binding.commit()
+        } finally { stop?.() }
       } catch (error) {
         if (remoteErrorOf(error) !== undefined) throw error
         if (error instanceof AttachmentError) {

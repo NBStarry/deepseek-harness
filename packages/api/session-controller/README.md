@@ -39,6 +39,8 @@ Every Remote endpoint is access-controlled: a Peer whose principal is not the ow
 
 `events` reads one chronological page from a durable cut and returns its records, `hasMore`, and an inclusive `cursor`; omitting `throughSeq` selects the observed log end, and the compatible `page` method carries the same read with a deprecated entry point. `events`, `observeEvent`, and `follow` take an Address; projection and state operations take a Session ID. Page reads and Follow openings validate the supplied Address. Pure `observeEvent` and `observeProjections` subscriptions neither acquire an Observation nor establish existence: their `ready` frame carries no snapshot cursor.
 
+`api-session/browser-prompt` identifies the live agent and host-assigned message ID of a prompt submitted by the authenticated browser peer. It fires on inbox insertion, before claim, not for API peers with the same owner principal or for a deduplicated retry. It is not a durable permission.
+
 List rows carry `formatStatus` when available, so Clients can identify migration-required Sessions without requesting their projections.
 
 Host list generation yields between complete rows only when its configured work slice is exhausted; cheap remaining work returns without a forced yield. Request cancellation is checked per row and after each yield and rejects without partial results. Each row is synchronous; the list does not promise one cross-Session snapshot. A Session already queued as cold remains a cached row if it attaches during a yield: Client in-flight mutation replay corrects its availability, and sequenced projections supersede cached hints.

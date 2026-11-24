@@ -4812,6 +4812,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     parameters: [{ name: 'summary', description: 'current list row for the Session.' }],
   },
   {
+    name: 'api-session/browser-prompt',
+    mode: 'emit',
+    signature: '\'api-session/browser-prompt\'(agent: Agent, messageId: MessageId): void',
+    summary: 'An authenticated browser peer\'s prompt entered this live inbox, before its first claim.',
+    description: 'An authenticated browser peer\'s prompt entered this live inbox, before its first claim.',
+    parameters: [{ name: 'agent', description: 'Exact Agent that accepted the prompt.' }, { name: 'messageId', description: 'Host-assigned identity of the inserted message.' }],
+  },
+  {
     name: 'api-session/error',
     mode: 'emit',
     signature: '\'api-session/error\'(sessionId: SessionId, message: string): void',

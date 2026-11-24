@@ -69,6 +69,8 @@ On macOS and Linux you get the bash shell tools; on Windows you get the PowerShe
 
 ### Changing the defaults
 
+Desktop offers `run_code` alongside each preset's registered tools unless the preset selects its own executor. A program gets only those tools, with their normal permissions. Other profiles retain their existing executor. To select a native-only Desktop default, enable `tool-executor-native` and disable `tool-executor-ptc` in the profile patch.
+
 To change what a profile built on this core provides — a different default model, a stricter permission mode, extra or fewer tools — edit your profile's `cordis.patch.yml` or add a later bundle. Each patch entry replaces the target's whole configuration, so restate every setting you want to keep. Keep the sandboxed filesystem provider as the single file-write path: adding the plain filesystem provider on top of it makes the profile fail to load.
 
 -----

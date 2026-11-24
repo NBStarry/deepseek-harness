@@ -69,6 +69,8 @@ kind: "package-bundle"
 
 ### 更改默认值
 
+桌面端在预设注册的工具之外提供 `run_code`，除非预设自行指定执行器。脚本只能调用该预设已有的工具，权限不变。其他 profile 保留原有执行器。如需桌面端默认仅直接调用工具，请在 profile patch 中启用 `tool-executor-native` 并禁用 `tool-executor-ptc`。
+
 要改变基于本核心构建的 profile 提供的内容——不同的默认模型、更严格的权限模式、更多或更少的工具——请编辑 profile 的 `cordis.patch.yml` 或添加后面的组合包。每个 patch 条目会替换目标的整个配置，因此请重述每个想保留的设置。保持沙箱化文件系统提供方作为唯一的文件写入路径：在其之上再添加普通文件系统提供方会导致 profile 加载失败。
 
 -----

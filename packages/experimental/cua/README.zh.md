@@ -73,7 +73,7 @@ Computer Use 详情页的权限卡片、组件列表和来源信息使用 l3 边
 
 提供方将准备好的 helper、连接工厂和指引传给 [installCua](src/index.ts)。[NativeClient](src/native-client.ts) 负责请求关联、字节上限、取消确认和失败处理。平台连接器负责启动和连接清理。共享执行器为每个 Agent 保留一个连接，并在销毁时等待进行中的图像写入。
 
-`agentPreset` 接受单个 preset ID（默认 `ptc`）或非空的 ID 列表。只有绑定到匹配 preset 的 Agent 才会获得工具和指引。提供方使用现有 `agent/created`、`agent-preset/selected` 事件及 Agent 拥有的作用域，也处理启用前已存在的 Agent。提供方卸载和 Agent 销毁都会释放这些注册。preset 定义可以晚于提供方注册；名称用于筛选已绑定的 Agent，在匹配的 Agent 出现前不提供工具。不使用 preset 的独立组合可设置 `agentPreset: false` 来全局注册。Host 仍拥有权限、本机连接和取消操作，preset 定义保持不变。
+`agentPreset` 接受单个 preset ID（默认 `ptc`）或非空的 ID 列表。只有绑定到匹配 preset 的 Agent 才会获得工具和指引。提供方使用现有 `agent/created`、`agent-preset/selected` 事件及 Agent 拥有的作用域，也处理启用前已存在的 Agent。提供方卸载和 Agent 销毁都会释放这些注册。preset 定义可以晚于提供方注册；名称用于筛选已绑定的 Agent，在匹配的 Agent 出现前不提供工具。`agentPreset: false` 只取消预设筛选。在桌面端，它和已保存的应用许可都不能授权后台会话或无人值守轮次。在发送原生请求之前，提供方会检查在线的顶层 agent、当前步骤的工具集，以及本轮是否接受了已认证聊天客户端提交的提示词。同为 owner 的 API 客户端不满足条件。此检查识别的是客户端连接，而不是物理按键。Host 仍拥有权限、本机连接和取消操作，preset 定义保持不变。
 
 [操作 schema](src/protocol.ts) 定义模型参数，并单独声明 Host 专用字段。原生实现在执行时检查目标身份、窗口几何、资源上限和操作系统访问条件。授权存储独立于原生协议保存持久许可。
 

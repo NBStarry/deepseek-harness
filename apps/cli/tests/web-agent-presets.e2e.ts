@@ -24,6 +24,14 @@ import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import { afterAll, beforeAll, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { bundlePatchPaths, composeEntries } from '@deepseek-ai/dsh-app-boot'
 import { createPluginProfile } from '../../desktop/src/project-manager.ts'
+import { Peer, type RemoteInvocation } from '@deepseek-ai/dsh-client-connection'
+import { installNativeFixture, startFixtureHost } from '../../../packages/experimental/cua-macos/tests/native-fixture.ts'
+import type { SessionRequestId } from '@deepseek-ai/dsh-api-session-controller/types'
+// Type-only: declares `ctx.sessionController` and the `ctx.invocation` marker the prompt path reads.
+import type {} from '@deepseek-ai/dsh-api-session-controller'
+import type {} from '@deepseek-ai/dsh-typert-protocol'
+// Type-only: Schedule's message-source entry names the unattended negative case.
+import type {} from '@deepseek-ai/dsh-schedule'
 /** Profile entry ids whose volatile fields these scenarios edit through Settings. */
 const SETTINGS_NAMESPACE = 'agent-preset-registry'
 const SUBAGENT_MODEL_SELECTION_SETTINGS_NAMESPACE = 'subagent-model-selection-settings'
@@ -49,6 +57,8 @@ const CLAUDE_CODE_PACKAGE_DIR = join(REPO_ROOT, 'packages/subagent/subagent-clau
 /** The installation anchor whose dependency surface the runtime resolution mirrors. */
 const INSTALL_ANCHOR = join(REPO_ROOT, 'apps/cli/package.json')
 const MINIMAL_PROMPT = 'You are a helpful software engineer assistant.'
+/** Shell tool the shipped base composition registers on this platform. */
+const SHELL_TOOL = process.platform === 'win32' ? 'pwsh' : 'bash'
 /** Deterministic model responses for the shipped minimal compaction path. */
 class MinimalCompactionAdapter extends LlmAdapter {
   readonly requests: GenerateOptions[] = []
@@ -110,6 +120,7 @@ async function bootWeb(
   profilePackages: readonly string[] = [],
   profileBundles?: readonly string[],
   surface: 'web' | 'desktop' | 'spec' = 'spec',
+  browserPeer?: (ctx: Context) => object,
 ): Promise<Context> {
   const storageRoot = join(profileHome, 'storages')
   const overrides: PatchOptions[] = [
@@ -224,6 +235,8 @@ async function bootWeb(
     bootCtx.provide('connection', {
       fetch: { register: () => () => {} },
       rpc: { intercept: () => () => {} },
+      // Only the CUA admission scenario names a distinct browser peer; default boots keep this stub.
+      ...browserPeer === undefined ? {} : { get browserPeer() { return browserPeer(bootCtx) } },
     } as never)
     provideCmdline(bootCtx, { args: [], exit: () => {} })
   })
@@ -725,6 +738,156 @@ describe('the shipped Web composition', () => {
   })
 })
 
+/** Scripted model responses: real model tool calls executed by the Agent loop. */
+type ScriptStep = { calls?: Array<{ id: string; name: string; args: Record<string, unknown> }>; text?: string }
+class ScriptedAdapter extends LlmAdapter {
+  readonly requests: GenerateOptions[] = []
+  constructor(private readonly steps: readonly ScriptStep[]) { super() }
+  override resolveModel(provider: string, model: string): Promise<LlmResolvedModelInfo> {
+    return Promise.resolve({ provider, id: model, name: model })
+  }
+  override async * stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
+    this.requests.push(options)
+    const step = this.steps[this.requests.length - 1]
+    if (step === undefined) throw new Error('scripted adapter exhausted')
+    if (step.calls !== undefined) {
+      for (const [index, call] of step.calls.entries()) {
+        const argumentsJson = JSON.stringify(call.args)
+        yield { type: 'block-start', index, blockType: 'tool-call' }
+        yield { type: 'tool-call-delta', index, id: ToolCallId(call.id), name: call.name, argumentsDelta: argumentsJson }
+        yield { type: 'block-end', index, block: { type: 'tool-call', id: ToolCallId(call.id), name: call.name, arguments: argumentsJson } }
+      }
+      yield { type: 'finish', reason: { kind: 'tool-calls' } }
+      return
+    }
+    const text = step.text ?? 'done'
+    yield { type: 'block-start', index: 0, blockType: 'text' }
+    yield { type: 'text-delta', index: 0, text }
+    yield { type: 'block-end', index: 0, block: { type: 'text', text } }
+    yield { type: 'finish', reason: { kind: 'stop' } }
+  }
+}
+/** Tool outcomes by call id, read from the session the real loop committed. */
+function settled(handle: { agent: Agent }): Map<string, { isError: boolean; text: string }> {
+  const outcomes = new Map<string, { isError: boolean; text: string }>()
+  for (const event of handle.agent.session.snapshotEvents()) {
+    if (event.type !== 'tool/result') continue
+    const text = event.data.message.content.filter(block => block.type === 'text').map(block => block.text).join('')
+    outcomes.set(event.data.message.toolCallId, { isError: event.data.message.isError === true, text })
+  }
+  return outcomes
+}
+
+describe('desktop default executor', () => {
+  const bootSurface = async (surface: 'web' | 'desktop', extra: PatchOptions[] = []) => {
+    const root = await mkdtemp(join(tmpdir(), `dsh-desktop-defaults-${surface}-`))
+    onTestFinished(async () => { await rm(root, { recursive: true, force: true }) })
+    return await bootWeb(root, extra, [], undefined, surface)
+  }
+  /** Mount one preset (or the deployment default) behind a scripted model. */
+  const mountScripted = async (ctx: Context, preset: string | undefined, steps: readonly ScriptStep[]) => {
+    const adapter = new ScriptedAdapter(steps)
+    const provider = `desktop-script-${randomUUID()}`
+    ctx.llm.registerAdapter([provider], adapter)
+    const handle = await ctx.agents.create({
+      sessionId: SessionId(`desktop-script-${preset ?? 'root'}-${randomUUID()}`),
+      agentOptions: { provider, model: provider },
+      ...preset === undefined ? {} : { setup: owner => ctx.agentPresets.mount(owner, preset).then(() => undefined) },
+    })
+    return { adapter, handle }
+  }
+  const firstTools = (adapter: ScriptedAdapter): string[] => (adapter.requests[0]?.tools ?? []).map(tool => tool.name).sort()
+
+  it('defaults the desktop deployment scope to hybrid while other profiles stay native', async () => {
+    const web = await bootSurface('web')
+    const desktop = await bootSurface('desktop')
+    try {
+      const webAgent = await mountScripted(web, undefined, [{ text: 'ok' }])
+      const code = 'return { wd: await tools.working_directory({}), types: [typeof tools.read, typeof tools.write, typeof tools.edit] }'
+      const desktopAgent = await mountScripted(desktop, undefined, [{ calls: [
+        { id: 'desktop-direct', name: 'working_directory', args: {} },
+        { id: 'desktop-program', name: 'run_code', args: { description: 'Inspect the deployment scope', code } },
+      ] }, { text: 'done' }])
+      try {
+        webAgent.handle.agent.followup(createUserMessage({ content: [{ type: 'text', text: 'ok' }], source: { kind: 'user' } }))
+        desktopAgent.handle.agent.followup(createUserMessage({ content: [{ type: 'text', text: 'inspect and call' }], source: { kind: 'user' } }))
+        // The turn completion is the reliable request barrier; polling request counts races under load.
+        await Promise.all([webAgent.handle.agent.whenIdle(), desktopAgent.handle.agent.whenIdle()])
+        expect(firstTools(webAgent.adapter)).toEqual(['working_directory'])
+        expect(firstTools(desktopAgent.adapter)).toEqual(['run_code', 'working_directory'])
+        const outcomes = settled(desktopAgent.handle)
+        const program = outcomes.get('desktop-program')
+        expect(program?.isError, program?.text).toBe(false)
+        const value = JSON.parse(program?.text ?? 'null') as { wd: unknown; types: string[] }
+        expect(value.types).toEqual(['undefined', 'undefined', 'undefined'])
+        expect(value.wd).toBeTypeOf('object')
+        expect(outcomes.get('desktop-direct')?.isError).toBe(false)
+      } finally {
+        await webAgent.handle.dispose(); await desktopAgent.handle.dispose()
+      }
+    } finally { await web.fiber.dispose(); await desktop.fiber.dispose() }
+  }, 120_000)
+
+  it('keeps explicit presets and custom executors over the desktop default', async () => {
+    const ctx = await bootSurface('desktop', [{ insert: [
+      { id: 'preset-desktop-inherit', name: '@deepseek-ai/dsh-agent-preset',
+        config: { id: 'desktop-inherit', name: 'Desktop inherit', plugins: [] } },
+      { id: 'preset-desktop-native', name: '@deepseek-ai/dsh-agent-preset',
+        config: { id: 'desktop-native', name: 'Desktop native',
+          plugins: [{ id: 'tool-executor-native', name: '@deepseek-ai/dsh-tool-executor-native' }] } },
+    ] }])
+    const minimalCode = 'return { wd: await tools.working_directory({}), '
+      + `shell: typeof tools.${SHELL_TOOL}, `
+      + 'missing: [typeof tools.read, typeof tools.write, typeof tools.edit] }'
+    const minimalSteps = [{ calls: [{
+      id: 'minimal-program', name: 'run_code',
+      args: { description: 'Inspect the minimal scope', code: minimalCode },
+    }] }, { text: 'done' }]
+    const ptc = await mountScripted(ctx, 'ptc', [{ text: 'ptc' }])
+    const minimal = await mountScripted(ctx, 'minimal', minimalSteps)
+    const standard = await mountScripted(ctx, 'standard', [{ text: 'standard' }])
+    const cordis = await mountScripted(ctx, 'cordis', [{ text: 'cordis' }])
+    const inherit = await mountScripted(ctx, 'desktop-inherit', [{ text: 'inherit' }])
+    const pinned = await mountScripted(ctx, 'desktop-native', [{ text: 'pinned' }])
+    const mounted = [ptc, minimal, standard, cordis, inherit, pinned]
+    try {
+      for (const entry of mounted) {
+        entry.handle.agent.followup(createUserMessage({ content: [{ type: 'text', text: 'go' }], source: { kind: 'user' } }))
+      }
+      await Promise.all(mounted.map(entry => entry.handle.agent.whenIdle()))
+      expect(firstTools(ptc.adapter)).toEqual(['run_code'])
+      expect(firstTools(minimal.adapter)).toEqual([SHELL_TOOL, 'read_image', 'run_code', 'working_directory'])
+      for (const agent of [inherit.adapter]) expect(firstTools(agent)).toContain('run_code')
+      expect(firstTools(pinned.adapter)).toEqual(['working_directory'])
+      for (const handle of [standard, cordis]) {
+        expect(firstTools(handle.adapter)).toEqual(expect.arrayContaining([SHELL_TOOL, 'read', 'run_code']))
+      }
+      const minimalProgram = settled(minimal.handle).get('minimal-program')
+      expect(minimalProgram?.isError, minimalProgram?.text).toBe(false)
+      const value = JSON.parse(minimalProgram?.text ?? 'null') as { shell: string; missing: string[]; wd: unknown }
+      expect(value.shell).toBe('function')
+      expect(value.missing).toEqual(['undefined', 'undefined', 'undefined'])
+      expect(value.wd).toBeTypeOf('object')
+    } finally {
+      for (const entry of mounted) await entry.handle.dispose()
+      await ctx.fiber.dispose()
+    }
+  }, 120_000)
+
+  it('lets a profile patch restore the native executor on desktop', async () => {
+    const ctx = await bootSurface('desktop', [
+      { id: 'tool-executor-native', disabled: false },
+      { id: 'tool-executor-ptc', disabled: true },
+    ])
+    const agent = await mountScripted(ctx, undefined, [{ text: 'native' }])
+    try {
+      agent.handle.agent.followup(createUserMessage({ content: [{ type: 'text', text: 'go' }], source: { kind: 'user' } }))
+      await agent.handle.agent.whenIdle()
+      expect(firstTools(agent.adapter)).toEqual(['working_directory'])
+    } finally { await agent.handle.dispose(); await ctx.fiber.dispose() }
+  })
+})
+
 describe('preset-selected delegation through the Web Loader', () => {
   it('exposes configured delegation tools when each preset switch resolves', async () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-delegation-switch-'))
@@ -829,6 +992,199 @@ describe.each(['web', 'desktop'] as const)('%s native subagent bundles', (surfac
         expect(await presetTools(productCtx, preset)).toEqual(['custom_claude_code'])
       }
     } finally { await productCtx.fiber.dispose() }
+  }, 120_000)
+})
+
+describe.skipIf(process.platform !== 'darwin')('desktop computer-use admission over the shipped bundle', () => {
+  const CUA_BUNDLE_PACKAGE = join(REPO_ROOT, 'packages/experimental/cua-bundle')
+  const CUA_BUNDLE_PATCH = join(CUA_BUNDLE_PACKAGE, 'cordis.patch.yml')
+  const CUA_MACOS_PACKAGE = join(REPO_ROOT, 'packages/experimental/cua-macos')
+  const CUA_PACKAGE = join(REPO_ROOT, 'packages/experimental/cua')
+  const COMPUTER_USE_PACKAGE = join(REPO_ROOT, 'packages/computer-use/computer-use')
+  /**
+   * Boot a surface with the shipped CUA bundle and the package's synthetic native
+   * helper. Desktop receives a distinct browser peer shared by `connection` and the
+   * `sessionController.prompt` invocation, so only controller-delivered prompts are
+   * attested browser input.
+   */
+  async function bootCua(surface: 'web' | 'desktop', extra: PatchOptions[] = []) {
+    const root = await mkdtemp(join(tmpdir(), `dsh-${surface}-cua-`))
+    const helper = await installNativeFixture(root)
+    const closeFixture = await startFixtureHost(helper)
+    onTestFinished(async () => { await closeFixture(); await rm(root, { recursive: true, force: true }) })
+    await writeFile(join(root, 'permissions.json'), JSON.stringify({
+      accessibility: false, screenRecording: false,
+      launchApplication: { name: 'DSH Computer Use.app', path: '/Applications/DSH Computer Use.app', icon: '' },
+    }))
+    await writeFile(join(root, 'observe-helper'), '')
+    const bundle = loadOverlayPatches('desktop-cua', CUA_BUNDLE_PATCH)
+    const cuaRow = bundle.flatMap(patch => patch.insert ?? []).find(row => row.id === 'cua')
+    if (cuaRow?.config === undefined) throw new Error('the CUA bundle must insert the cua row with config')
+    // One browser Peer per boot: `connection.browserPeer` and every prompt invocation
+    // share the instance, and the Peer scope lives on the boot Context (no separate dispose).
+    let browserPeer: Peer | undefined
+    const connectionPeer = (owner: Context): object =>
+      (browserPeer ??= new Peer(owner, { principal: { kind: 'owner' } }))
+    // Select the real bundle instead of splicing its rows: the profile then resolves the
+    // bundle's provider closure, so `@deepseek-ai/dsh-computer-use` is importable and the
+    // registered provider is the shipped macOS one. The override only injects the fixture
+    // helper and keeps the bundle's own `!!js` preset condition.
+    const ctx = await bootWeb(root, [
+      ...extra,
+      { id: 'ui-cua', disabled: true },
+      { id: 'cua', config: { ...cuaRow.config as object, helperPath: helper } },
+    ], [CUA_BUNDLE_PACKAGE, CUA_MACOS_PACKAGE, CUA_PACKAGE, COMPUTER_USE_PACKAGE],
+    ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', '@deepseek-ai/dsh-cua-bundle'], surface, connectionPeer)
+    // The shipped provider must be the one under test; a missing row would otherwise
+    // make every later assertion pass vacuously.
+    expect(ctx.get('computerUse')?.providerName).toBe('dsh-cua')
+    const peer = (): Peer => (browserPeer ??= new Peer(ctx, { principal: { kind: 'owner' } }))
+    const auditLines = async (): Promise<string[]> => {
+      try { return (await readFile(join(root, 'helper-events.jsonl'), 'utf8')).trim().split('\n').filter(Boolean) }
+      catch (error: unknown) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
+        throw error
+      }
+    }
+    /** Native `getCapabilities` deliveries the fixture received, by audit content rather than any spawn. */
+    const capabilities = async (): Promise<number> =>
+      (await auditLines()).filter(line => line.includes('"method":"getCapabilities"')).length
+    const audit = capabilities
+    const mount = async (preset: string | undefined, steps: readonly ScriptStep[]) => {
+      const adapter = new ScriptedAdapter(steps)
+      const provider = `cua-script-${randomUUID()}`
+      ctx.llm.registerAdapter([provider], adapter)
+      const handle = await ctx.agents.create({
+        sessionId: SessionId(`cua-script-${preset ?? 'root'}-${randomUUID()}`),
+        agentOptions: { provider, model: provider },
+        ...preset === undefined ? {} : { setup: owner => ctx.agentPresets.mount(owner, preset).then(() => undefined) },
+      })
+      return { adapter, handle }
+    }
+    /** Deliver a prompt through the real Remote controller, as the browser page does. */
+    const promptAsBrowser = async (handle: { agent: Agent }, text: string) => {
+      if (surface !== 'desktop') throw new Error('browser prompt requires a desktop boot')
+      const signal = new AbortController().signal
+      const invocation: RemoteInvocation = {
+        request: { namespace: 'session', method: 'prompt', args: {} },
+        service: 'sessionController', peer: peer(), signal,
+        uplink: <In>(): AsyncIterable<In> => ({ [Symbol.asyncIterator]: () => ({ next: async () => ({ done: true, value: undefined }) }) }),
+      }
+      return await ctx.extend({ invocation }).sessionController.prompt({
+        sessionId: handle.agent.session.id, requestId: randomUUID() as SessionRequestId,
+        mode: 'queue', content: [{ type: 'text', text }],
+      }, signal)
+    }
+    const browserPrompt = async (handle: { agent: Agent }, text = 'drive the desktop') => {
+      await expect(promptAsBrowser(handle, text)).resolves.toEqual({ accepted: true })
+      await handle.agent.whenIdle()
+    }
+    return { ctx, audit, mount, browserPrompt }
+  }
+  const capabilityCalls = (label: string) => [
+    { id: `${label}-direct`, name: 'cua', args: { method: 'getCapabilities', params: {} } },
+    { id: `${label}-nested`, name: 'run_code',
+      args: { description: 'Read native capabilities', code: 'return await tools.cua({ method: "getCapabilities", params: {} })' } },
+  ]
+
+  it('admits a browser prompt for standard, cordis, minimal, and a custom preset', async () => {
+    const { ctx, audit, mount, browserPrompt } = await bootCua('desktop', [{ insert: [{
+      id: 'preset-cua-custom', name: '@deepseek-ai/dsh-agent-preset',
+      config: { id: 'cua-custom', name: 'Custom CUA', plugins: [] },
+    }] }])
+    const presets = [['standard', 'standard'], ['cordis', 'cordis'], ['minimal', 'minimal'], ['custom', 'cua-custom']] as const
+    const mounted = await Promise.all(presets.map(([label, preset]) =>
+      mount(preset, [{ calls: capabilityCalls(label) }, { text: 'done' }])))
+    try {
+      const transcript: string[] = []
+      for (const [index, entry] of mounted.entries()) {
+        const [label] = presets[index]!
+        const before = await audit()
+        await browserPrompt(entry.handle)
+        const visible = (entry.adapter.requests[0]?.tools ?? []).map(tool => tool.name)
+        expect(visible).toContain('cua')
+        const outcomes = settled(entry.handle)
+        const exposed = visible.filter(name => ['cua', 'run_code'].includes(name)).sort().join(', ')
+        transcript.push(`${label}: ${exposed} → ${[...outcomes.keys()].sort().join(', ')}`)
+        for (const suffix of ['direct', 'nested']) {
+          expect(outcomes.get(`${label}-${suffix}`)?.isError, outcomes.get(`${label}-${suffix}`)?.text).toBe(false)
+        }
+        // The fixture delivers exactly the direct and program-nested native calls.
+        expect(await audit()).toBe(before + 2)
+      }
+      expect(transcript).toMatchInlineSnapshot(`
+        [
+          "standard: cua, run_code → standard-direct, standard-nested",
+          "cordis: cua, run_code → cordis-direct, cordis-nested",
+          "minimal: cua, run_code → minimal-direct, minimal-nested",
+          "custom: cua, run_code → custom-direct, custom-nested",
+        ]
+      `)
+    } finally {
+      for (const entry of mounted) await entry.handle.dispose()
+      await ctx.fiber.dispose()
+    }
+  }, 120_000)
+
+  it('refuses bare user, schedule, and delegated turns without native delivery', async () => {
+    const { ctx, audit, mount } = await bootCua('desktop')
+    const bare = await mount(undefined, [{ calls: capabilityCalls('bare') }, { text: 'done' }])
+    const scheduled = await mount(undefined, [{ calls: capabilityCalls('schedule') }, { text: 'done' }])
+    let child: Awaited<ReturnType<typeof ctx.agents.create>> | undefined
+    try {
+      const before = await audit()
+      bare.handle.agent.followup(createUserMessage({ content: [{ type: 'text', text: 'bare client input' }], source: { kind: 'user' } }))
+      await bare.handle.agent.whenIdle()
+      expect(bare.adapter.requests[0]?.tools?.map(tool => tool.name)).not.toContain('cua')
+      for (const callId of ['bare-direct', 'bare-nested']) {
+        const outcome = settled(bare.handle).get(callId)
+        expect(outcome?.isError).toBe(true)
+      }
+      scheduled.handle.agent.followup(createUserMessage({ content: [{ type: 'text', text: 'scheduled work' }], source: { kind: 'schedule' } }))
+      await scheduled.handle.agent.whenIdle()
+      expect(scheduled.adapter.requests[0]?.tools?.map(tool => tool.name)).not.toContain('cua')
+      expect(settled(scheduled.handle).get('schedule-direct')?.isError).toBe(true)
+      child = await ctx.agents.create({
+        sessionId: SessionId(`cua-child-${randomUUID()}`), parentAgent: bare.handle.agent,
+        agentOptions: { provider: 'cua-child', model: 'cua-child' },
+      })
+      const childAdapter = new ScriptedAdapter([{ calls: capabilityCalls('child') }, { text: 'done' }])
+      ctx.llm.registerAdapter(['cua-child'], childAdapter)
+      child.agent.followup(createUserMessage({ content: [{ type: 'text', text: 'delegated work' }], source: { kind: 'user' } }))
+      await child.agent.whenIdle()
+      expect(childAdapter.requests[0]?.tools?.map(tool => tool.name)).not.toContain('cua')
+      expect(settled(child).get('child-direct')?.isError).toBe(true)
+      expect(await audit()).toBe(before)
+    } finally {
+      await child?.dispose()
+      await bare.handle.dispose(); await scheduled.handle.dispose()
+      await ctx.fiber.dispose()
+    }
+  }, 120_000)
+
+  it('serves PTC-only sessions through programs only', async () => {
+    const { ctx, audit, mount, browserPrompt } = await bootCua('desktop')
+    const ptc = await mount('ptc', [{ calls: capabilityCalls('ptc') }, { text: 'done' }])
+    try {
+      const before = await audit()
+      await browserPrompt(ptc.handle)
+      expect(ptc.adapter.requests[0]?.tools?.map(tool => tool.name)).toEqual(['run_code'])
+      const outcomes = settled(ptc.handle)
+      expect(outcomes.get('ptc-direct')?.isError).toBe(true)
+      expect(outcomes.get('ptc-nested')?.isError, outcomes.get('ptc-nested')?.text).toBe(false)
+      // The direct call never reached the helper; only the program-scoped call did.
+      expect(await audit()).toBe(before + 1)
+    } finally { await ptc.handle.dispose(); await ctx.fiber.dispose() }
+  }, 120_000)
+
+  it('keeps a Web profile without the desktop deployment-scope tool', async () => {
+    const { ctx, mount } = await bootCua('web')
+    const web = await mount(undefined, [{ text: 'web' }])
+    try {
+      web.handle.agent.followup(createUserMessage({ content: [{ type: 'text', text: 'web session' }], source: { kind: 'user' } }))
+      await web.handle.agent.whenIdle()
+      expect(web.adapter.requests[0]?.tools?.map(tool => tool.name)).not.toContain('cua')
+    } finally { await web.handle.dispose(); await ctx.fiber.dispose() }
   }, 120_000)
 })
 
