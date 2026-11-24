@@ -31,6 +31,8 @@ The helper runs through LaunchServices as the independent background application
 
 This package is an optional macOS dependency. For local development, run `pnpm --dir packages/experimental/cua-macos run build:native` to generate an ad-hoc-signed application and `current.json` under `native/bin`. Release packaging requires `--identity "Developer ID Application: <name> (<team>)"` and notarization; see [native build and service](native/README.md#build-and-service). Installed packages preserve the distributed signature. Source preparation requires Swift and Python 3 from Apple Command Line Tools.
 
+When Desktop includes this provider, release packaging requires a signed, notarized helper for the target architecture and preserves its signature. Unsigned Desktop builds can prepare an ad-hoc helper when no distributed helper exists. Electron unpacks the complete application and receipt into `app.asar.unpacked`; the provider requires that physical application and does not fall back to the archive. The default Desktop runtime omits this optional provider.
+
 For repository Web use, enable [Computer Use](../cua-bundle/README.md) in Plugins. This prepares the local executable on macOS 14 or later; Windows support is in development. Subsequent builds check it while the existing Web profile keeps the bundle selected. Disabled profiles do not prepare native components. Explicit source composition is also available:
 
 ```sh
@@ -41,7 +43,7 @@ The dump command checks profile composition without a model request. For a real 
 
 | Field | Default | Meaning |
 | --- | --- | --- |
-| `agentPreset` | `ptc` | Register tools and guidance only for Agents bound to this preset; `false` registers globally. |
+| `agentPreset` | `ptc` | One preset ID or a nonempty list of IDs limits tools and guidance to matching Agents; `false` registers globally. |
 | `allowedApps` | `[]` | Legacy path/signature grants, imported once for removal; they do not authorize new bundle-ID identities. |
 | `helperPath` | package-owned executable | Absolute executable inside the signed helper `.app`; a bare binary fails with `NATIVE_APPLICATION_REQUIRED`. |
 | `buildTimeoutMs` | `300000` | Maximum native preparation time. |

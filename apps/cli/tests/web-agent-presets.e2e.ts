@@ -300,7 +300,7 @@ describe('the shipped Web composition', () => {
       // excluded for the reason the TUI composition e2e excludes them — they
       // depend on ripgrep being present on the machine.
       expect(toolNames(ctx, handle.agent).filter(name => name !== 'glob' && name !== 'grep')).toEqual([
-        'ask_user_question', 'bash', 'create_goal', 'edit', 'exit_plan_mode',
+        'apply_patch', 'ask_user_question', 'bash', 'create_goal', 'edit', 'exit_plan_mode',
         'get_goal', 'interrupt_agent', 'job_kill', 'job_list', 'job_output', 'list_agents', 'list_subagent_models', 'plugin_manager', 'present', 'read', 'read_image',
         'schedule_create', 'schedule_edit', 'schedule_list', 'schedule_view',
         'send_message', 'skill',
@@ -609,12 +609,11 @@ describe('the shipped Web composition', () => {
       expect(sdk).not.toContain('str_replace_editor')
       expect(sdk).toContain('web_search')
 
-      // The presentation is this agent's alone: the deployment default is
-      // native, and the session composed from `standard` still sees it.
+      // The presentation is this agent's alone: the session composed from
+      // `standard` is hybrid, so it adds native schemas AND the program transport.
       const nativeAssembly = await ctx.systemPrompt.assemble({ scope: native.agent })
-      expect(nativeAssembly.tools.map(tool => tool.name)).toContain('bash')
-      expect(nativeAssembly.tools.map(tool => tool.name)).not.toContain('run_code')
-      expect(nativeAssembly.sections.some(section => section.name === 'tools:sdk')).toBe(false)
+      expect(nativeAssembly.tools.map(tool => tool.name)).toEqual(expect.arrayContaining(['bash', 'run_code']))
+      expect(nativeAssembly.sections.some(section => section.name === 'tools:sdk')).toBe(true)
     } finally {
       await native.dispose()
       await coded.dispose()

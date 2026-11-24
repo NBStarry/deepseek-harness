@@ -32,8 +32,8 @@ export { CuaAccess } from './access.ts'
 
 /** Native executable and per-operation resource bounds. */
 export interface CuaConfig {
-  /** Register tools for Agents using this preset; defaults to ptc. False enables global registration. */
-  agentPreset: string | false
+  /** Register tools for one preset or a nonempty list of presets; defaults to ptc. False registers globally. */
+  agentPreset: string | string[] | false
   /** Legacy grants imported once into profile-scoped storage; later edits are ignored. */
   allowedApps: Array<Omit<CuaApplicationGrant, 'id'> & {
     /** Unbranded digest at the profile configuration boundary; admitted by the Config schema. */
@@ -79,7 +79,9 @@ export interface CuaConfig {
 
 /** Validated host configuration; no driver is downloaded at runtime. */
 export const CuaConfig = Schema.object({
-  agentPreset: Schema.union([Schema.string().min(1), Schema.const(false)]).default('ptc'),
+  agentPreset: Schema.union([
+    Schema.string().min(1), Schema.array(Schema.string().min(1).required()).min(1), Schema.const(false),
+  ]).default('ptc'),
   allowedApps: Schema.array(Schema.object({
     id: Schema.string().pattern(/^[a-f0-9]{64}$/).required(),
     name: Schema.string().required(), executablePath: Schema.string().min(1),
@@ -342,11 +344,13 @@ var cua = connectCua(() => tools.cua, text => console.log(text));
     }
     if (config.agentPreset === false) register(ctx)
     else {
+      const presets = Array.isArray(config.agentPreset) ? config.agentPreset : [config.agentPreset]
       const consumer = ctx.inject(['agentPresets'], async (presetCtx) => {
         const scopes = new Map<Agent, Scope>()
         const sync = async (agent: Agent): Promise<void> => {
           const previous = scopes.get(agent)
-          if (presetCtx.agentPresets.composedPreset(agent.ctx) !== config.agentPreset) {
+          const preset = presetCtx.agentPresets.composedPreset(agent.ctx)
+          if (preset === undefined || !presets.includes(preset)) {
             scopes.delete(agent)
             await previous?.dispose()
             return

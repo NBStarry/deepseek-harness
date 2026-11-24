@@ -5,6 +5,6 @@
       name: '@deepseek-ai/dsh-experimental-cua-macos'
       disabled: !!js process.platform !== 'darwin'
       config:
-        agentPreset: ptc
+        agentPreset: [ptc, standard, cordis]
     - id: ui-cua
       name: '@deepseek-ai/dsh-cua'

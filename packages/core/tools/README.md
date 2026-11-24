@@ -74,7 +74,7 @@ The unified schema DSL supports `string`, `number`, `integer`, `boolean`, `null`
 
 ### Select an executor
 
-Mount one executor in the deployment, preset, or Agent scope. The nearest scope selects the provider; duplicate providers in one scope fail. Native exposes visible capabilities directly; PTC exposes `run_code` and a generated SDK. Executor registration and disposal do not emit `tools/change`; prompt assemblies and batches resolve the current executor when they run.
+Mount one executor in the deployment, preset, or Agent scope. The nearest scope selects the provider; duplicate providers in one scope fail. Native exposes visible capabilities directly; PTC exposes `run_code` and a generated SDK, and its optional hybrid mode also exposes permitted native schemas. If an executor omits `knownNames`, tool-order validation accepts both pre-restriction registry names and the executor’s projected schema names; an explicit `knownNames` remains authoritative. Executor registration and disposal do not emit `tools/change`; prompt assemblies and batches resolve the current executor when they run.
 
 ```yaml
 - name: '@deepseek-ai/dsh-tools'

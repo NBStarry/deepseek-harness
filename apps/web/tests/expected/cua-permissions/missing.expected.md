@@ -2,7 +2,7 @@
   - heading "Authorize computer use" [level=3]
   - group "Default mode for new sessions":
     - strong: Default mode for new sessions
-    - paragraph: Computer use is available only in PTC mode.
+    - paragraph: Computer use is available to the presets its configuration includes; setting PTC as the default for new sessions is optional.
     - button "Set to PTC"
   - group "PTC execution mode":
     - strong: PTC execution mode

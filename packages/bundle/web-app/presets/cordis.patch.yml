@@ -119,6 +119,10 @@
             config:
               fetch: true
               searchTimeoutMs: 60000
+          - id: tool-executor-ptc
+            name: '@deepseek-ai/dsh-tool-executor-ptc'
+            config:
+              hybrid: true
           - id: tool-cordis
             name: '@deepseek-ai/dsh-tool-cordis'
           - id: skill-filesystem

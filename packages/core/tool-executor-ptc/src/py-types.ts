@@ -5,7 +5,7 @@
  * store, keyed by the loaded {@link @deepseek-ai/dsh-ptc-runtime#PtcRuntime.language | PTC
  * runtime's language}.
  *
- * With the PTC executor selected, native tool schemas are omitted from the request. This generated
+ * By default the PTC executor omits native tool schemas from the request, so this generated
  * SDK is the model's only source for each tool's argument names, required fields, types,
  * descriptions, and canonical output types. Object-shaped arguments and outputs render as one
  * named `TypedDict` per tool (and per nested object), not an opaque `dict[str, Any]`, so the

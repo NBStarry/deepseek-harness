@@ -1,4 +1,4 @@
 - group "新会话默认模式":
   - strong: 新会话默认模式
-  - paragraph: Computer Use 仅在 PTC 模式中可用。
+  - paragraph: Computer Use 可用于其配置包含的预设模式；可将 PTC 设为新会话默认模式，此为可选操作。
   - button "设为 PTC"

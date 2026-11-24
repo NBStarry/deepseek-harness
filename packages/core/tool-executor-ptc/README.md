@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Use this executor when models should call tools through `run_code` programs. Mount a compatible PTC runtime and tool registry first. Scoped restrictions determine the generated SDK; only `run_code` is directly callable. Configure concurrency for parallel-safe program subcalls.
+Use this executor when models should call tools through `run_code` programs. Mount a compatible PTC runtime and tool registry first. Scoped restrictions determine the generated SDK. By default only `run_code` is directly callable; `hybrid: true` also exposes the permitted native tools directly. Configure concurrency for parallel-safe program subcalls.
 
 ## Table of Contents
 
@@ -32,6 +32,8 @@ Add this row to a composition with `dsh-tools` mounted. The nearest scoped execu
   config:
     maxParallelSubCalls: 10
 ```
+
+Set `hybrid: true` to expose permitted native tool schemas alongside `run_code`. Direct and program-nested calls use the same policy and execution pipeline. The default is `false`, which preserves PTC-only behavior. Mount only this executor in the target scope; do not mount a second native executor there. Existing profile overlays replacing a preset’s entire `config` must be merged with this option rather than blindly applied on top.
 
 Root `run_code` calls are exclusive and execute serially. `maxParallelSubCalls` limits parallel-safe nested calls within each program and defaults to `10`; it must be a positive integer, with `1` selecting serial execution. Exclusive calls form barriers.
 

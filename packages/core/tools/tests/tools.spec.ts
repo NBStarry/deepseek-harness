@@ -51,6 +51,28 @@ const echoTool = defineTool({
   },
 })
 
+describe('executor tool-order names', () => {
+  it.each([
+    { explicit: false, ordered: 'projected', accepted: true },
+    { explicit: true, ordered: 'projected', accepted: false },
+    { explicit: true, ordered: 'chosen', accepted: true },
+    { explicit: false, ordered: 'unknown', accepted: false },
+  ])('honors explicit names and validates $ordered with explicit=$explicit', async ({ explicit, ordered, accepted }) => {
+    const ctx = new Context()
+    await ctx.plugin(SystemPrompt, { toolOrder: [ordered, '<unlisted-tools>'] })
+    await ctx.plugin(ToolRuntime)
+    ctx.tools.setExecutor({
+      describe: () => ({ schemas: [{ name: 'projected', description: 'projected', parameters: { type: 'object' } }],
+        ...explicit ? { knownNames: ['chosen'] } : {} }),
+      execute: async () => ({ results: [], additionalContexts: [], concluded: false }),
+    })
+    try {
+      if (accepted) expect((await ctx.systemPrompt.assemble()).tools.map(tool => tool.name)).toEqual(['projected'])
+      else await expect(ctx.systemPrompt.assemble()).rejects.toThrow(/toolOrder lists unregistered tool/)
+    } finally { await ctx.fiber.dispose() }
+  })
+})
+
 describe('ToolRuntime', () => {
   it.each([{ mode: 'ptc' }, { maxParallelSubCalls: 4 }])('rejects removed execution configuration %j during plugin mounting', async (config) => {
     const ctx = new Context()

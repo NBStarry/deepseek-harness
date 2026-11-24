@@ -198,6 +198,85 @@ it('logs detached frozen nested metadata without changing the binding value or l
   }
 })
 
+describe('hybrid execution', () => {
+  it('exposes direct tools and run_code with ordered schemas and one shared dispatch', async () => {
+    const { ctx, runtime, systemPrompt } = await setup({ mode: 'native', toolOrder: ['run_code', 'echo', '<unlisted-tools>'] })
+    const calls = registerEcho(ctx)
+    const { scope, agent } = await mintAgentScope(ctx, 'hybrid-agent')
+    scope.ctx.tools.setExecutor(new PtcExecutor(scope.ctx, { hybrid: true }))
+    try {
+      const assembly = await systemPrompt.assemble({ scope: agent })
+      expect(assembly.tools.map(tool => tool.name)).toEqual(['run_code', 'echo'])
+      expect(assembly.sections.find(section => section.name === 'tools:sdk')?.text).toContain('echo:')
+      expect(assembly.sections.some(section => section.name === 'tools:ptc-only')).toBe(false)
+      await expect(systemPrompt.assemble()).rejects.toThrow(/toolOrder lists unregistered tool "run_code"/)
+      runtime.behavior = async request => ({ logs: [], value: await request.bindings[0]!.functions.echo!({ value: 'nested' }) })
+      const direct = await executeCall(ctx, { agent, signal: testToolSignal, callId: ToolCallId('hybrid-direct'), name: 'echo', arguments: { value: 'direct' } })
+      const nested = await runCode(ctx, 'program', { agent })
+      expect(direct).toMatchObject({ isError: false, value: 'echo:direct' })
+      expect(nested).toMatchObject({ isError: false, value: { result: 'echo:nested' } })
+      expect(calls).toEqual([{ value: 'direct' }, { value: 'nested' }])
+    } finally { await ctx.fiber.dispose() }
+  })
+
+  it('enforces scoped restrictions on schemas, direct calls, and nested bindings', async () => {
+    const { ctx, runtime, systemPrompt } = await setup({ mode: 'native' })
+    const kept = registerEcho(ctx, 'kept')
+    const hidden = registerEcho(ctx, 'hidden')
+    const { scope, agent } = await mintAgentScope(ctx, 'hybrid-restricted')
+    scope.ctx.tools.setExecutor(new PtcExecutor(scope.ctx, { hybrid: true }))
+    scope.ctx.tools.restrict({ deny: ['hidden'] })
+    try {
+      const assembly = await systemPrompt.assemble({ scope: agent })
+      expect(assembly.tools.map(tool => tool.name).sort()).toEqual(['kept', 'run_code'])
+      expect(assembly.sections.find(section => section.name === 'tools:sdk')?.text).not.toContain('hidden:')
+      const denied = await executeCall(ctx, { agent, signal: testToolSignal, callId: ToolCallId('hidden-direct'), name: 'hidden', arguments: { value: 'no' } })
+      expect(denied.error?.info).toMatchObject({ code: 'UNKNOWN_TOOL' })
+      runtime.behavior = async (request) => {
+        const functions = request.bindings[0]!.functions
+        expect(Object.keys(functions)).toEqual(['kept'])
+        return { logs: [], value: await functions.kept!({ value: 'yes' }) }
+      }
+      expect(await runCode(ctx, 'program', { agent })).toMatchObject({ isError: false, value: { result: 'kept:yes' } })
+      expect(hidden).toEqual([])
+      expect(kept).toEqual([{ value: 'yes' }])
+    } finally { await ctx.fiber.dispose() }
+  })
+
+  it('applies step admission to both hybrid direct calls and program bindings', async () => {
+    const { ctx, runtime, systemPrompt } = await setup({ mode: 'native' })
+    const { scope, agent } = await mintAgentScope(ctx, 'hybrid-conditional')
+    scope.ctx.tools.setExecutor(new PtcExecutor(scope.ctx, { hybrid: true }))
+    const execute = vi.fn(async () => 'allowed')
+    ctx.tools.register(defineTool({ name: 'conditional', description: 'Conditional fixture.', parameters: {},
+      output: { schema: { type: 'string' }, render: (_args, value) => [{ type: 'text', text: value }] }, execute,
+    }), { when: () => false })
+    const toolSet = await ctx.tools.resolve({ agent, modelSelection: { provider: 'test', model: 'test' }, signal: testToolSignal })
+    try {
+      const assembly = await systemPrompt.assemble({ scope: agent, agent, toolSet })
+      expect(assembly.tools.map(tool => tool.name)).toEqual(['run_code'])
+      expect(assembly.sections.find(section => section.name === 'tools:sdk')?.text).not.toContain('conditional:')
+      const denied = await executeCall(ctx, { agent, toolSet, signal: testToolSignal, callId: ToolCallId('conditional-direct'), name: 'conditional', arguments: {} })
+      expect(denied.error?.info).toMatchObject({ code: 'UNKNOWN_TOOL' })
+      runtime.behavior = async (request) => {
+        expect(Object.keys(request.bindings[0]!.functions)).toEqual([])
+        return { logs: [], value: 'checked' }
+      }
+      expect(await executeCall(ctx, { agent, toolSet, signal: testToolSignal, callId: ToolCallId('conditional-code'), name: 'run_code', arguments: { code: 'program', description: 'Check step admission' } })).toMatchObject({ isError: false, value: { result: 'checked' } })
+      expect(execute).not.toHaveBeenCalled()
+    } finally { toolSet.dispose(); await ctx.fiber.dispose() }
+  })
+
+  it('keeps unknown toolOrder names invalid in hybrid mode', async () => {
+    const { ctx, systemPrompt } = await setup({ mode: 'ptc', toolOrder: ['missing', '<unlisted-tools>'] })
+    try {
+      const { scope, agent } = await mintAgentScope(ctx, 'hybrid-order')
+      scope.ctx.tools.setExecutor(new PtcExecutor(scope.ctx, { hybrid: true }))
+      await expect(systemPrompt.assemble({ scope: agent })).rejects.toThrow(/toolOrder lists unregistered tool "missing"/)
+    } finally { await ctx.fiber.dispose() }
+  })
+})
+
 describe('mode-aware wire contribution', () => {
   it('shares conditional admission with SDK bindings and rejects a replaced cached binding', async () => {
     const { ctx, runtime, systemPrompt } = await setup({ mode: 'ptc' })

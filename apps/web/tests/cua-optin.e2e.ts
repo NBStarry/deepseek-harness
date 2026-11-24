@@ -1,10 +1,10 @@
-/** CUA follows PTC Agent scopes and changes the default only from its detail page. */
+/** CUA follows the preset scope its bundle configures and changes the default only from its detail page. */
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium, type Browser } from 'playwright'
-import { readProfileManifest } from '@deepseek-ai/dsh-app-boot'
+import { loadOverlayPatches, readProfileManifest } from '@deepseek-ai/dsh-app-boot'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-ptc-runtime'
 import type {} from '@deepseek-ai/dsh-agent-preset-registry'
@@ -12,6 +12,8 @@ import { load } from 'js-yaml'
 import { expect, it, vi } from 'vitest'
 import { captureStableAria, compareOrRefreshGolden, launchWebScaffold, webSnapshotMode, type WebScaffold } from './scaffold.ts'
 import { connectFreshWorkspaceZh, ZH_BROWSER_LOCALE } from './support.ts'
+
+const cuaBundlePatch = fileURLToPath(new URL('../../../packages/experimental/cua-bundle/cordis.patch.yml', import.meta.url))
 
 // The shipped bundle admits only macOS Hosts; unsupported Hosts are exercised in bundle-platform.e2e.ts.
 it.skipIf(process.platform !== 'darwin').each([
@@ -25,8 +27,15 @@ it.skipIf(process.platform !== 'darwin').each([
   let browser: Browser | undefined
   try {
     const patch = join(directory, 'native-fixture.yml')
+    // Keep the shipped row config and add only the fixture helper; a wholesale replacement would hide the bundle's preset scope.
+    const shippedCua = loadOverlayPatches('cua-optin fixture', cuaBundlePatch)
+      .flatMap(layer => layer.insert ?? [])
+      .find(row => row.id === 'cua')?.config
+    if (typeof shippedCua !== 'object' || shippedCua === null || Array.isArray(shippedCua)) {
+      throw new Error('The CUA bundle patch must insert a cua row with an object config')
+    }
     // Permission inspection fails against this non-helper executable; activation still permits dismissing setup.
-    await writeFile(patch, JSON.stringify([{ id: 'cua', config: { helperPath: process.execPath } }]))
+    await writeFile(patch, JSON.stringify([{ id: 'cua', config: { ...shippedCua, helperPath: process.execPath } }]))
     const defaults = join(directory, 'script-defaults')
     if (script) {
       await mkdir(defaults)
@@ -75,7 +84,13 @@ it.skipIf(process.platform !== 'darwin').each([
       sessionId: SessionId('cua-existing-ptc'),
       setup: async (ctx) => { await scaffold.ctx.agentPresets.mount(ctx, 'ptc') },
     })).agent
-    expect(scaffold.ctx.tools.schemas(ptcAgent).some(tool => tool.name === 'cua')).toBe(false)
+    const creatorAgent = (await scaffold.ctx.agents.create({
+      sessionId: SessionId('cua-existing-creator'),
+      setup: async (ctx) => { await scaffold.ctx.agentPresets.mount(ctx, 'cordis') },
+    })).agent
+    for (const agent of [originalAgent, ptcAgent, creatorAgent]) {
+      expect(scaffold.ctx.tools.schemas(agent).some(tool => tool.name === 'cua')).toBe(false)
+    }
     const runtimeFiber = () => [...scaffold.ctx.loader.entries()].find(entry => entry.options.id === 'ptc-runtime')?.fiber
     const originalRuntimeFiber = runtimeFiber()
     expect(originalRuntimeFiber).toBeDefined()
@@ -122,7 +137,9 @@ it.skipIf(process.platform !== 'darwin').each([
     expect(profileManifest().dependencies).toEqual(dependencies)
     expect(await card.getByText('实验性', { exact: true }).count()).toBe(1)
     expect(await card.textContent()).not.toContain('将 PTC 模式改为可持久化')
-    expect(await card.textContent()).toContain('请切换到 PTC 模式')
+    expect(await card.textContent()).toContain('哪些模式可用取决于预设配置')
+    expect(await card.textContent()).toContain('使用前请授予辅助功能和屏幕录制权限')
+    expect(await card.textContent()).not.toContain('请切换到 PTC 模式')
     expect(await card.textContent()).toContain('Windows 支持正在开发中')
     expect(await card.textContent()).not.toContain('Swift')
     const description = await card.getByRole('button', { name: '查看 Computer Use', exact: true }).evaluate((button) => {
@@ -137,12 +154,15 @@ it.skipIf(process.platform !== 'darwin').each([
     expect(scaffold.ctx.agents.get(originalAgent.id) === originalAgent).toBe(true)
     expect(scaffold.ctx.agents.get(ptcAgent.id) === ptcAgent).toBe(true)
     expect(scaffold.ctx.agentPresets.composedPreset(originalAgent.ctx)).toBe(initialDefault)
-    expect(scaffold.ctx.tools.schemas(originalAgent).some(tool => tool.name === 'cua')).toBe(false)
-    expect(scaffold.ctx.tools.schemas(ptcAgent).some(tool => tool.name === 'cua')).toBe(true)
+    expect(scaffold.ctx.tools.schemas(originalAgent).some(tool => tool.name === 'cua')).toBe(initialDefault !== 'minimal')
+    for (const agent of [ptcAgent, creatorAgent]) {
+      expect(scaffold.ctx.tools.schemas(agent).some(tool => tool.name === 'cua')).toBe(true)
+    }
     expect((await scaffold.ctx.systemPrompt.assemble({ scope: ptcAgent })).tools.map(tool => tool.name)).toEqual(['run_code'])
-    for (const preset of ['ptc', 'standard', 'ptc', initialDefault]) {
+    for (const preset of ['ptc', 'standard', 'cordis', 'minimal', initialDefault]) {
       await scaffold.ctx.agentPresets.select(originalAgent, preset)
-      expect(scaffold.ctx.tools.schemas(originalAgent).some(tool => tool.name === 'cua')).toBe(preset === 'ptc')
+      await expect.poll(() => scaffold.ctx.tools.schemas(originalAgent).some(tool => tool.name === 'cua'))
+        .toBe(preset !== 'minimal')
     }
     const child = await scaffold.ctx.agents.create({
       sessionId: SessionId('cua-child'), parentAgent: ptcAgent,
@@ -174,7 +194,7 @@ it.skipIf(process.platform !== 'darwin').each([
       setup: async (ctx) => { await scaffold.ctx.agentPresets.mount(ctx) },
     })).agent
     expect(scaffold.ctx.agentPresets.composedPreset(freshDefault.ctx)).toBe(initialDefault)
-    expect(scaffold.ctx.tools.schemas(freshDefault).some(tool => tool.name === 'cua')).toBe(false)
+    expect(scaffold.ctx.tools.schemas(freshDefault).some(tool => tool.name === 'cua')).toBe(initialDefault !== 'minimal')
     const fresh = (await scaffold.ctx.agents.create({
       sessionId: SessionId('cua-new-ptc'),
       setup: async (ctx) => { await scaffold.ctx.agentPresets.mount(ctx, 'ptc') },
@@ -204,8 +224,10 @@ it.skipIf(process.platform !== 'darwin').each([
     expect(runtimeFiber() === persistentRuntimeFiber).toBe(true)
     expect(scaffold.ctx.agentPresets.defaultId).toBe(initialDefault)
     expect(scaffold.ctx.agents.get(ptcAgent.id) === ptcAgent).toBe(true)
-    for (const agent of [ptcAgent, fresh]) {
+    for (const agent of [ptcAgent, fresh, originalAgent, creatorAgent]) {
       expect(scaffold.ctx.tools.schemas(agent).some(tool => tool.name === 'cua')).toBe(false)
+    }
+    for (const agent of [ptcAgent, fresh]) {
       expect((await scaffold.ctx.systemPrompt.assemble({ scope: agent })).tools.map(tool => tool.name)).toEqual(['run_code'])
     }
     expect((await runtime.run(runtime.resolve({ program, bindings: [], stateOwner: owner }))).value).toBe(2)

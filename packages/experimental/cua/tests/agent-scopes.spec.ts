@@ -105,6 +105,55 @@ it('accepts a matching preset registered after the CUA provider', async () => {
   expect(ctx.tools.get('cua', handle.agent)).toBeDefined()
 })
 
+it('registers CUA for every preset in a nonempty agentPreset list and ignores other presets', async () => {
+  const { ctx, create } = await setup(['ptc', 'standard', 'cordis', 'minimal'])
+  const ptc = await create('listed-ptc', 'ptc')
+  const standard = await create('listed-standard', 'standard')
+  const cordis = await create('listed-cordis', 'cordis')
+  const minimal = await create('listed-minimal', 'minimal')
+  const mounted = await ctx.plugin(provider, { agentPreset: ['ptc', 'standard', 'cordis'] })
+  for (const handle of [ptc, standard, cordis]) {
+    await expect.poll(() => ctx.tools.get('cua', handle.agent)).toBeDefined()
+  }
+  expect(ctx.tools.get('cua', minimal.agent)).toBeUndefined()
+  expect((await ctx.systemPrompt.assemble({ scope: standard.agent })).sections)
+    .toContainEqual(expect.objectContaining({ name: 'computer-use:dsh-cua' }))
+  expect((await ctx.systemPrompt.assemble({ scope: minimal.agent })).sections)
+    .not.toContainEqual(expect.objectContaining({ name: 'computer-use:dsh-cua' }))
+  await ctx.agentPresets.select(minimal.agent, 'cordis')
+  await expect.poll(() => ctx.tools.get('cua', minimal.agent)).toBeDefined()
+  await ctx.agentPresets.select(cordis.agent, 'minimal')
+  await expect.poll(() => ctx.tools.get('cua', cordis.agent)).toBeUndefined()
+  await mounted.dispose()
+  expect(ctx.tools.get('cua', ptc.agent)).toBeUndefined()
+})
+
+it('excludes an Agent without a composed preset from a configured list', async () => {
+  const { ctx } = await setup(['ptc', 'cordis'])
+  const bare = await ctx.agents.create({ sessionId: SessionId('list-bare') })
+  await ctx.plugin(provider, { agentPreset: ['ptc', 'cordis'] })
+  expect(ctx.tools.get('cua', bare.agent)).toBeUndefined()
+})
+
+it('still scopes a single agentPreset string to exactly that preset', async () => {
+  const { ctx, create } = await setup(['ptc', 'standard', 'cordis'])
+  const cordis = await create('string-cordis', 'cordis')
+  const ptc = await create('string-ptc', 'ptc')
+  const mounted = await ctx.plugin(provider, { agentPreset: 'cordis' })
+  await expect.poll(() => ctx.tools.get('cua', cordis.agent)).toBeDefined()
+  expect(ctx.tools.get('cua', ptc.agent)).toBeUndefined()
+  await mounted.dispose()
+  expect(ctx.tools.get('cua', cordis.agent)).toBeUndefined()
+})
+
+it('accepts list, single, false, and default agentPreset configurations', () => {
+  expect(CuaConfig({}).agentPreset).toBe('ptc')
+  expect(CuaConfig({ agentPreset: 'standard' }).agentPreset).toBe('standard')
+  expect(CuaConfig({ agentPreset: ['ptc', 'standard', 'cordis'] }).agentPreset).toEqual(['ptc', 'standard', 'cordis'])
+  expect(CuaConfig({ agentPreset: false }).agentPreset).toBe(false)
+  expect(() => CuaConfig({ agentPreset: [] })).toThrow()
+})
+
 it.each([
   { programFormat: 'script', retainsState: true },
   { programFormat: 'script', retainsState: false },

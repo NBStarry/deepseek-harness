@@ -31,6 +31,8 @@ helper 通过 LaunchServices 以独立的 `DSH Computer Use.app` 后台运行，
 
 本包是仅限 macOS 的可选依赖。本地开发时运行 `pnpm --dir packages/experimental/cua-macos run build:native`，在 `native/bin` 下生成临时签名应用及 `current.json`。正式打包需要指定 `--identity "Developer ID Application: <name> (<team>)"` 并完成公证，参见[原生构建与服务](native/README.zh.md#build-and-service)。安装版保留分发时的签名。源码准备需要 Apple Command Line Tools 提供的 Swift 和 Python 3。
 
+Desktop 包含本提供方时，正式打包要求目标架构的 helper 已签名并完成公证，且保留其签名。无签名的 Desktop 构建在没有分发版 helper 时可以准备临时签名版本。Electron 将完整应用及其记录解包至 `app.asar.unpacked`；provider 要求该物理应用，不回退到归档内路径。默认 Desktop 运行环境不包含这个可选提供方。
+
 从仓库运行 Web 时，在插件页开启 [Computer Use](../cua-bundle/README.zh.md)。首次启用会在 macOS 14 及以上准备本机组件，Windows 支持正在开发中。现有 Web profile 保持选中时，后续构建继续检查更新。未开启的 profile 不准备原生组件。也可以显式加载源码覆盖层：
 
 ```sh
@@ -41,7 +43,7 @@ pnpm dsh headless --patch packages/experimental/cua-macos/examples/macos.cordis.
 
 | 字段 | 默认值 | 含义 |
 | --- | --- | --- |
-| `agentPreset` | `ptc` | 仅为绑定该 preset 的 Agent 注册工具和指引；`false` 表示全局注册。 |
+| `agentPreset` | `ptc` | 单个 preset ID 或非空的 ID 列表将工具和指引限制到匹配的 Agent；`false` 表示全局注册。 |
 | `allowedApps` | `[]` | 旧路径和签名许可，只导入 profile 存储一次供撤销，不授予新 Bundle ID 身份访问权限。 |
 | `helperPath` | 包内可执行文件 | 已签名 helper `.app` 内可执行文件的绝对路径；裸二进制会触发 `NATIVE_APPLICATION_REQUIRED`。 |
 | `buildTimeoutMs` | `300000` | 原生组件准备的最长时间。 |

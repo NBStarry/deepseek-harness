@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-当模型应通过 `run_code` 程序调用工具时，使用此执行器。先挂载兼容的 PTC 运行时和工具注册表。作用域限制决定生成的 SDK；只有 `run_code` 能被直接调用。可配置并行安全的程序子调用并发上限。
+当模型应通过 `run_code` 程序调用工具时，使用此执行器。先挂载兼容的 PTC 运行时和工具注册表。作用域限制决定生成的 SDK；默认只有 `run_code` 能被直接调用，设置 `hybrid: true` 后也可直接调用允许的原生工具。可配置并行安全的程序子调用并发上限。
 
 ## 目录
 
@@ -32,6 +32,8 @@ kind: "package-reference"
   config:
     maxParallelSubCalls: 10
 ```
+
+设置 `hybrid: true` 可在 `run_code` 旁公开允许的原生工具 schema。直接调用和程序内嵌套调用使用同一策略及执行流水线。默认值为 `false`，保持纯 PTC 行为。目标作用域仅挂载此执行器，不要同时挂载原生执行器。已有 profile 若整体替换预设的 `config`，须合并此配置，不能直接叠加覆盖。
 
 根 `run_code` 调用是独占调用，按串行执行。`maxParallelSubCalls` 限制每个程序中并行安全的嵌套调用数，默认值为 `10`；值必须是正整数，`1` 表示串行执行。独占调用构成屏障。
 

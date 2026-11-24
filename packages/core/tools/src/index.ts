@@ -113,7 +113,12 @@ export class ToolsService extends Service {
     ctx.systemPrompt.tools(({ scope, toolSet }) => {
       const executor = this.selectExecutor(scope)
       const description = executor.describe(this.definitions(scope, toolSet))
-      return { ...description, knownNames: description.knownNames ?? [...this.view(scope).knownNames] }
+      return {
+        ...description,
+        knownNames: description.knownNames ?? [...new Set([
+          ...this.view(scope).knownNames, ...description.schemas.map(schema => schema.name),
+        ])],
+      }
     })
   }
 
