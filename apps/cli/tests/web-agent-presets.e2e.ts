@@ -24,7 +24,11 @@ import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import { afterAll, beforeAll, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { bundlePatchPaths, composeEntries } from '@deepseek-ai/dsh-app-boot'
 import { createPluginProfile } from '../../desktop/src/project-manager.ts'
-import { Peer, type RemoteInvocation } from '@deepseek-ai/dsh-client-connection'
+import { DesktopSshLogin, HostConnectionService, Peer, type PeerScope, type RemoteInvocation } from '@deepseek-ai/dsh-client-connection'
+import { BrowserAuth } from '../../../packages/client/connection/src/browser-auth.ts'
+import { desktopIndexVerifier } from '../../../packages/client/connection/src/desktop-ssh-login.ts'
+// Type-only: declares `ctx.goals` augmentation used by the goal continuation negative.
+import type {} from '@deepseek-ai/dsh-goal'
 import { installNativeFixture, startFixtureHost } from '../../../packages/experimental/cua-macos/tests/native-fixture.ts'
 import type { SessionRequestId } from '@deepseek-ai/dsh-api-session-controller/types'
 // Type-only: declares `ctx.sessionController` and the `ctx.invocation` marker the prompt path reads.
@@ -121,6 +125,7 @@ async function bootWeb(
   profileBundles?: readonly string[],
   surface: 'web' | 'desktop' | 'spec' = 'spec',
   browserPeer?: (ctx: Context) => object,
+  connectionStub = true,
 ): Promise<Context> {
   const storageRoot = join(profileHome, 'storages')
   const overrides: PatchOptions[] = [
@@ -232,12 +237,14 @@ async function bootWeb(
       startedBundles: profileBundles ?? ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'],
       overlays: [], telemetryDisabledEnv: '1' })
     await bootCtx.plugin(PluginPackages, { resolution })
-    bootCtx.provide('connection', {
-      fetch: { register: () => () => {} },
-      rpc: { intercept: () => () => {} },
-      // Only the CUA admission scenario names a distinct browser peer; default boots keep this stub.
-      ...browserPeer === undefined ? {} : { get browserPeer() { return browserPeer(bootCtx) } },
-    } as never)
+    if (connectionStub) {
+      bootCtx.provide('connection', {
+        fetch: { register: () => () => {} },
+        rpc: { intercept: () => () => {} },
+        // Only the CUA admission scenario names a distinct browser peer; default boots keep this stub.
+        ...browserPeer === undefined ? {} : { get browserPeer() { return browserPeer(bootCtx) } },
+      } as never)
+    }
     provideCmdline(bootCtx, { args: [], exit: () => {} })
   })
 }
@@ -1007,7 +1014,7 @@ describe.skipIf(process.platform !== 'darwin')('desktop computer-use admission o
    * `sessionController.prompt` invocation, so only controller-delivered prompts are
    * attested browser input.
    */
-  async function bootCua(surface: 'web' | 'desktop', extra: PatchOptions[] = []) {
+  async function bootCua(surface: 'web' | 'desktop', extra: PatchOptions[] = [], options: { realConnection?: boolean } = {}) {
     const root = await mkdtemp(join(tmpdir(), `dsh-${surface}-cua-`))
     const helper = await installNativeFixture(root)
     const closeFixture = await startFixtureHost(helper)
@@ -1034,10 +1041,18 @@ describe.skipIf(process.platform !== 'darwin')('desktop computer-use admission o
       { id: 'ui-cua', disabled: true },
       { id: 'cua', config: { ...cuaRow.config as object, helperPath: helper } },
     ], [CUA_BUNDLE_PACKAGE, CUA_MACOS_PACKAGE, CUA_PACKAGE, COMPUTER_USE_PACKAGE],
-    ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', '@deepseek-ai/dsh-cua-bundle'], surface, connectionPeer)
+    ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', '@deepseek-ai/dsh-cua-bundle'], surface,
+    options.realConnection === true ? undefined : connectionPeer, options.realConnection !== true)
     // The shipped provider must be the one under test; a missing row would otherwise
     // make every later assertion pass vacuously.
     expect(ctx.get('computerUse')?.providerName).toBe('dsh-cua')
+    let real: { auth: BrowserAuth; connection: HostConnectionService } | undefined
+    if (options.realConnection === true) {
+      const credentials = ctx.get('credentials')
+      if (credentials === undefined) throw new Error('real Connection boot requires the credentials service')
+      const auth = await BrowserAuth.create({}, credentials, 30)
+      real = { auth, connection: new HostConnectionService(ctx, [], auth) }
+    }
     const peer = (): Peer => (browserPeer ??= new Peer(ctx, { principal: { kind: 'owner' } }))
     const auditLines = async (): Promise<string[]> => {
       try { return (await readFile(join(root, 'helper-events.jsonl'), 'utf8')).trim().split('\n').filter(Boolean) }
@@ -1079,7 +1094,7 @@ describe.skipIf(process.platform !== 'darwin')('desktop computer-use admission o
       await expect(promptAsBrowser(handle, text)).resolves.toEqual({ accepted: true })
       await handle.agent.whenIdle()
     }
-    return { ctx, audit, mount, browserPrompt }
+    return { ctx, audit, mount, browserPrompt, real }
   }
   const capabilityCalls = (label: string) => [
     { id: `${label}-direct`, name: 'cua', args: { method: 'getCapabilities', params: {} } },
@@ -1175,6 +1190,111 @@ describe.skipIf(process.platform !== 'darwin')('desktop computer-use admission o
       // The direct call never reached the helper; only the program-scoped call did.
       expect(await audit()).toBe(before + 1)
     } finally { await ptc.handle.dispose(); await ctx.fiber.dispose() }
+  }, 120_000)
+
+  /** Mint one browser cookie through the production BrowserAuth exchange. */
+  function mintCookie(auth: BrowserAuth, host: string, token: string, verifier?: DesktopSshLogin['verifier']) {
+    let status = 0
+    let cookie: string | undefined
+    const response = {
+      writeHead(code: number, headers?: Readonly<Record<string, string>>) {
+        status = code
+        cookie = headers?.['set-cookie']?.split(';')[0]
+      },
+      end() {},
+    }
+    auth.authorizeIndex({ method: 'GET', url: `http://x/?token=${token}`, headers: { host } }, response, false, verifier)
+    return { status, cookie }
+  }
+
+  /** Deliver one prompt through the real controller for an admitted Peer. */
+  async function promptPeer(ctx: Context, handle: { agent: Agent }, peer: PeerScope, text: string) {
+    const signal = new AbortController().signal
+    const invocation: RemoteInvocation = {
+      request: { namespace: 'session', method: 'prompt', args: {} },
+      service: 'sessionController', peer, signal,
+      uplink: <In>(): AsyncIterable<In> => ({ [Symbol.asyncIterator]: () => ({ next: async () => ({ done: true, value: undefined }) }) }),
+    }
+    await expect(ctx.extend({ invocation }).sessionController.prompt({
+      sessionId: handle.agent.session.id, requestId: randomUUID() as SessionRequestId,
+      mode: 'queue', content: [{ type: 'text', text }],
+    }, signal)).resolves.toEqual({ accepted: true })
+    await handle.agent.whenIdle()
+  }
+
+  it('keeps direct and PTC delivery off a real admitted SSH cookie while the main login keeps them', async () => {
+    const booted = await bootCua('desktop', [], { realConnection: true })
+    const { ctx, audit, mount } = booted
+    const real = booted.real
+    if (real === undefined) throw new Error('real Connection boot did not construct the service')
+    const port = 43001
+    const host = `127.0.0.1:${port}`
+    const listener = { host: '127.0.0.1', port, protocol: 'http:' as const }
+    const socket = { localAddress: '127.0.0.1', localPort: port, originFormRoot: true }
+    const launch = new URL(real.auth.authenticatedUrl('http://x.invalid')).searchParams.get('token')!
+    const normal = mintCookie(real.auth, host, launch)
+    expect(normal.status).toBe(303)
+    if (normal.cookie === undefined) throw new Error('main login did not mint a cookie')
+    const credentials = ctx.get('credentials')
+    if (credentials === undefined) throw new Error('real Connection boot has no credentials service')
+    const login = await DesktopSshLogin.open(credentials, port)
+    const sshToken = await login.rotate()
+    const ssh = mintCookie(real.auth, host, sshToken, desktopIndexVerifier(login.verifier, listener, socket)!)
+    expect(ssh.status).toBe(303)
+    if (ssh.cookie === undefined) throw new Error('SSH login did not mint a cookie')
+    const admitted = (cookie: string): PeerScope => {
+      const result = real.connection.admit({ headers: { host, cookie } })
+      if ('rejection' in result) throw new Error(`unexpected admission rejection ${result.rejection}`)
+      return result.peer
+    }
+    const mainPeer = admitted(normal.cookie)
+    const sshPeer = admitted(ssh.cookie)
+    expect(mainPeer).toBe(real.connection.browserPeer)
+    expect(sshPeer).not.toBe(real.connection.browserPeer)
+    expect(sshPeer.principal.kind).toBe('owner')
+    const mainAgent = await mount(undefined, [{ calls: capabilityCalls('main') }, { text: 'done' }])
+    const sshAgent = await mount(undefined, [{ calls: capabilityCalls('ssh') }, { text: 'done' }])
+    try {
+      const beforeMain = await audit()
+      await promptPeer(ctx, mainAgent.handle, mainPeer, 'main login chat')
+      expect(mainAgent.adapter.requests[0]?.tools?.map(tool => tool.name)).toContain('cua')
+      const mainDirect = settled(mainAgent.handle).get('main-direct')
+      const mainNested = settled(mainAgent.handle).get('main-nested')
+      expect(mainDirect?.isError, mainDirect?.text).toBe(false)
+      expect(mainNested?.isError, mainNested?.text).toBe(false)
+      const afterMain = await audit()
+      expect(afterMain).toBe(beforeMain + 2)
+      await promptPeer(ctx, sshAgent.handle, sshPeer, 'ssh login chat')
+      expect(sshAgent.adapter.requests[0]?.tools?.map(tool => tool.name)).not.toContain('cua')
+      const sshDirect = settled(sshAgent.handle).get('ssh-direct')
+      const sshNested = settled(sshAgent.handle).get('ssh-nested')
+      expect(sshDirect?.isError, sshDirect?.text).toBe(true)
+      expect(sshNested?.isError, sshNested?.text).toBe(true)
+      // The program-nested rejection must be the absent CUA binding, never a sandbox failure.
+      expect(sshNested?.text ?? '').toMatch(/cua/iu)
+      expect(sshNested?.text ?? '').not.toMatch(/sandbox-(?:unavailable|exec)|sandbox_apply/iu)
+      expect(await audit()).toBe(afterMain)
+    } finally {
+      await mainAgent.handle.dispose(); await sshAgent.handle.dispose()
+      await ctx.fiber.dispose()
+    }
+  }, 120_000)
+
+  it('keeps goal continuation turns outside CUA', async () => {
+    const { ctx, audit, mount } = await bootCua('desktop')
+    const entry = await mount(undefined, [{ calls: capabilityCalls('goal') }, { text: 'done' }])
+    try {
+      const before = await audit()
+      ctx.goals.create(entry.handle.agent, { objective: 'CUA goal continuation negative', maxGoalRounds: 1 })
+      await expect.poll(() => entry.adapter.requests.length).toBeGreaterThan(0)
+      await entry.handle.agent.whenIdle()
+      for (const request of entry.adapter.requests) {
+        expect(request.tools?.map(tool => tool.name) ?? []).not.toContain('cua')
+      }
+      expect(settled(entry.handle).get('goal-direct')?.isError).toBe(true)
+      expect(settled(entry.handle).get('goal-nested')?.isError).toBe(true)
+      expect(await audit()).toBe(before)
+    } finally { await entry.handle.dispose(); await ctx.fiber.dispose() }
   }, 120_000)
 
   it('keeps a Web profile without the desktop deployment-scope tool', async () => {

@@ -206,6 +206,43 @@ ${HTTP_HOST}`)
     await expect(host.updateTasks('inspect')).rejects.toThrow('Host is unavailable')
   })
 
+  it('correlates native SSH controls without a token in readiness or status', async () => {
+    const token = `ssh_${'a'.repeat(64)}`
+    const host = hostProcess(projectWithHost(`
+      process.send({ type: 'ready', url: 'http://127.0.0.1:3080/?token=fixture' })
+      process.on('message', ({ type, requestId, action, revision }) => {
+        if (type === 'shutdown') process.send({ type: 'shutdown-complete' }, () => process.disconnect())
+        if (type !== 'ssh-login') return
+        if (action === 'status') {
+          process.send({ type, requestId: requestId + 100, result: { kind: 'token', token: '${token}' } })
+          process.send({ type, requestId, result: { kind: 'ready', port: 3080, revision: 7, hasToken: true } })
+        }
+        if (action === 'view' && revision === 7) process.send({ type, requestId, result: { kind: 'token', token: '${token}' } })
+        if (action === 'rotate') process.send({ type, requestId, result: { kind: 'token', token: '${token}' } })
+      })
+    `))
+    const { signal } = new AbortController()
+    expect(await host.sshLogin({ action: 'status' }, signal)).toEqual({ kind: 'unavailable' })
+    expect((await host.start()).url).not.toContain(token)
+    expect(await host.sshLogin({ action: 'status' }, signal)).toEqual({ kind: 'ready', port: 3080, revision: 7, hasToken: true })
+    expect(await host.sshLogin({ action: 'view', revision: 7 }, signal)).toEqual({ kind: 'token', token })
+    expect(await host.sshLogin({ action: 'rotate', revision: 7 }, signal)).toEqual({ kind: 'unavailable' })
+    await host.stop(true)
+  })
+
+  it('rejects malformed SSH token replies without logging their content', async () => {
+    const failure = vi.fn()
+    const host = hostProcess(projectWithHost(`
+      process.send({ type: 'ready', url: 'http://127.0.0.1:3080/' })
+      process.on('message', ({ type, requestId }) => {
+        process.send({ type, requestId, result: { kind: 'token', token: 'synthetic-invalid-token' } })
+      })
+    `), undefined, failure)
+    await host.start()
+    expect(await host.sshLogin({ action: 'view', revision: 1 }, new AbortController().signal)).toEqual({ kind: 'unavailable' })
+    expect(failure).toHaveBeenCalledExactlyOnceWith(new Error('dsh desktop host sent an invalid IPC event'))
+  })
+
   it('correlates quit inspections with task requests and fails an unanswered one at its own deadline', async () => {
     const host = hostProcess(projectWithHost())
     await expect(host.inspectQuit()).rejects.toThrow('desktop quit: Host is unavailable')

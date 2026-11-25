@@ -21,7 +21,10 @@ interface DefaultWeb {
   root: string
   url: string
   request: (command: 'roster' | 'mount-experimental' | 'mount-experimental-entry') => Promise<RuntimeRoster>
+  acknowledge: (command: string) => Promise<void>
 }
+
+type ObserverReply = { command?: string; roster?: RuntimeRoster; acknowledged?: boolean; error?: string }
 
 /**
  * Boot the built Web profile under plain Node and dispose it to quiescence after an assertion callback.
@@ -32,7 +35,7 @@ interface DefaultWeb {
 export async function withDefaultWeb(
   test: TestContext,
   inspect: (app: DefaultWeb) => Promise<void>,
-  options: { patches?: readonly string[]; prepare?: (root: string) => Promise<void> } = {},
+  options: { patches?: readonly string[]; prepare?: (root: string) => Promise<void>; privateOutput?: boolean } = {},
 ): Promise<void> {
   const root = await mkdtemp(join(tmpdir(), 'dsh-web-default-isolation-'))
   let removal: Promise<void> | undefined
@@ -85,11 +88,12 @@ export async function withDefaultWeb(
     let stdout = ''
     let stderr = ''
     child.stdout!.setEncoding('utf8').on('data', (chunk: string) => { stdout += chunk })
-    child.stderr!.setEncoding('utf8').on('data', (chunk: string) => { stderr += chunk })
+    child.stderr!.setEncoding('utf8').on('data', (chunk: string) => { if (!options.privateOutput) stderr += chunk })
+    const diagnostics = () => options.privateOutput ? '' : `\n${stdout}\n${stderr}`
     const completion = Promise.withResolvers<{ code: number | null; signal: NodeJS.Signals | null }>()
     let exited = false
     let processError: Error | undefined
-    const pending = new Map<string, ReturnType<typeof Promise.withResolvers<RuntimeRoster>>>()
+    const pending = new Map<string, ReturnType<typeof Promise.withResolvers<ObserverReply>>>()
     const rejectPending = (error: Error): void => {
       for (const request of pending.values()) request.reject(error)
       pending.clear()
@@ -97,26 +101,25 @@ export async function withDefaultWeb(
     child.once('error', (error) => { processError = error; rejectPending(error) })
     child.once('close', (code, signal) => {
       exited = true
-      rejectPending(new Error(`Web exited (code ${String(code)}, signal ${String(signal)})\n${stdout}\n${stderr}`))
+      rejectPending(new Error(`Web exited (code ${String(code)}, signal ${String(signal)})${diagnostics()}`))
       completion.resolve({ code, signal })
     })
-    child.once('disconnect', () => { rejectPending(new Error(`Web IPC disconnected\n${stdout}\n${stderr}`)) })
-    child.on('message', (message: { command?: string; roster?: RuntimeRoster; error?: string }) => {
+    child.once('disconnect', () => { rejectPending(new Error(`Web IPC disconnected${diagnostics()}`)) })
+    child.on('message', (message: ObserverReply) => {
       if (message.command === undefined) return
       const request = pending.get(message.command)
       if (request === undefined) return
       pending.delete(message.command)
       if (message.error !== undefined) request.reject(new Error(message.error))
-      else if (message.roster !== undefined) request.resolve(message.roster)
-      else request.reject(new Error('Web observer returned no runtime roster'))
+      else request.resolve(message)
     })
     const send = (command: string): Promise<void> => new Promise((resolve, reject) => {
       child.send(command, (error: Error | null) => { if (error) reject(error); else resolve() })
     })
-    const request = async (command: string): Promise<RuntimeRoster> => {
+    const exchange = async (command: string): Promise<ObserverReply> => {
       test.signal.throwIfAborted()
       if (exited || !child.connected) throw new Error(`Web is not connected during ${command}`)
-      const reply = Promise.withResolvers<RuntimeRoster>()
+      const reply = Promise.withResolvers<ObserverReply>()
       pending.set(command, reply)
       void send(command).catch((error: unknown) => {
         if (pending.get(command) !== reply) return
@@ -151,11 +154,20 @@ export async function withDefaultWeb(
     try {
       await expect.poll(() => {
         test.signal.throwIfAborted()
-        if (exited) throw new Error(`Web exited before readiness\n${stdout}\n${stderr}`)
+        if (exited) throw new Error(`Web exited before readiness${diagnostics()}`)
         return /dsh web: (http:\/\/[^\s]+)/u.exec(stdout)?.[1]
       }, { timeout: test.task.timeout }).toBeDefined()
       const url = /dsh web: (http:\/\/[^\s]+)/u.exec(stdout)![1]!
-      await inspect({ root, url, request })
+      await inspect({ root, url,
+        request: async (command) => {
+          const { roster } = await exchange(command)
+          if (!roster) throw new Error('Web observer returned no runtime roster')
+          return roster
+        },
+        acknowledge: async (command) => {
+          if ((await exchange(command)).acknowledged !== true) throw new Error(`Web fixture did not acknowledge ${command}`)
+        },
+      })
     } finally {
       const result = await close()
       test.signal.removeEventListener('abort', abort)
