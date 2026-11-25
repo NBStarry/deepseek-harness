@@ -28,6 +28,7 @@ const legacyDefinition = Object.freeze({
   receiptScriptSha256: 'c7e7b5a5c8aa9213b275ea8f259d4603d170f9a72db9f81c0e2cf48f295a0bc5',
   reconstructScriptSha256: '7d0a00313a25768fe9f7be7ad7777abfb26ff6a4b9002b8c84f3a033cc36b2bf',
   runnerLabel: 'macos-15',
+  firstStep: 'Require Apple Silicon host',
 })
 
 const primaryDefinition = Object.freeze({
@@ -36,6 +37,16 @@ const primaryDefinition = Object.freeze({
   receiptScriptSha256: 'b2e902233c64643694b3fcd244379f2110f66f030cd7197798e7b978dc03b14c',
   reconstructScriptSha256: '7d0a00313a25768fe9f7be7ad7777abfb26ff6a4b9002b8c84f3a033cc36b2bf',
   runnerLabel: 'macos-26',
+  firstStep: 'Require Apple Silicon host',
+})
+
+const ubuntuDefinition = Object.freeze({
+  name: 'ubuntu-24.04',
+  workflowFileSha256: '0b5dd54d3f72186d53907724606613634b87787b5e521ef0231d1bc662f6c7b6',
+  receiptScriptSha256: 'f8ddaf373cbc7700b864a3179a04ae7ceb64f7e0161c93b7cf0a45bed18c9874',
+  reconstructScriptSha256: '7d0a00313a25768fe9f7be7ad7777abfb26ff6a4b9002b8c84f3a033cc36b2bf',
+  runnerLabel: 'ubuntu-24.04',
+  firstStep: 'Require GitHub-hosted Ubuntu 24.04',
 })
 
 export const PINS = Object.freeze({
@@ -43,13 +54,12 @@ export const PINS = Object.freeze({
   workflowPath: '.github/workflows/cloud-precheck.yml',
   receiptScriptPath: 'scripts/cloud-precheck/receipt.mjs',
   reconstructScriptPath: 'scripts/cloud-precheck/reconstruct.mjs',
-  workflowFileSha256: primaryDefinition.workflowFileSha256,
-  receiptScriptSha256: primaryDefinition.receiptScriptSha256,
-  reconstructScriptSha256: primaryDefinition.reconstructScriptSha256,
+  workflowFileSha256: ubuntuDefinition.workflowFileSha256,
+  receiptScriptSha256: ubuntuDefinition.receiptScriptSha256,
+  reconstructScriptSha256: ubuntuDefinition.reconstructScriptSha256,
   allowedDispatchRefs: Object.freeze(['refs/heads/master']),
   requiredJob: 'precheck',
-  requiredSteps: Object.freeze([
-    'Require Apple Silicon host',
+  requiredTailSteps: Object.freeze([
     'Checkout baseline',
     'Setup Node',
     'Setup pnpm',
@@ -60,7 +70,7 @@ export const PINS = Object.freeze({
     'Emit receipt',
     'Upload receipt',
   ]),
-  definitions: Object.freeze([legacyDefinition, primaryDefinition]),
+  definitions: Object.freeze([legacyDefinition, primaryDefinition, ubuntuDefinition]),
 })
 
 const zeroSha = /^0{40}$/u
@@ -157,7 +167,7 @@ function verifiedJobs({ gh, pins, definition, repository, runId, attempt }) {
   if (matched.length !== 1) throw new Error(`expected exactly one ${pins.requiredJob} job, found ${matched.length}`)
   if (matched[0].conclusion !== 'success') throw new Error(`required job ${pins.requiredJob} concluded ${String(matched[0].conclusion)}`)
   const steps = Array.isArray(matched[0].steps) ? matched[0].steps : []
-  for (const name of pins.requiredSteps) {
+  for (const name of [definition.firstStep, ...pins.requiredTailSteps]) {
     const matches = steps.filter(step => step.name === name)
     if (matches.length !== 1) throw new Error(`required step ${JSON.stringify(name)} is missing from the precheck job`)
     if (matches[0].conclusion !== 'success') throw new Error(`required step ${JSON.stringify(name)} concluded ${String(matches[0].conclusion)}`)

@@ -64,7 +64,7 @@ function receiptFor({ tip, tree, overrides = {} }) {
     conclusion: 'success',
     startedAt: '2026-01-01T00:00:00Z',
     finishedAt: '2026-01-01T00:10:00Z',
-    runner: 'macos-26',
+    runner: 'ubuntu-24.04',
     ...overrides,
   }
 }
@@ -100,11 +100,12 @@ function runFor(overrides = {}) {
 }
 
 function stepsFor(overrides = {}) {
-  return PINS.requiredSteps.map(name => ({ name, conclusion: overrides[name] ?? 'success' }))
+  const definition = PINS.definitions.find(item => item.runnerLabel === 'ubuntu-24.04')
+  return [definition.firstStep, ...PINS.requiredTailSteps].map(name => ({ name, conclusion: overrides[name] ?? 'success' }))
 }
 
 function jobsFor({ attempt = 1, overrides = {}, jobOverrides = {} } = {}) {
-  return [{ total_count: 1, jobs: [{ name: PINS.requiredJob, conclusion: 'success', run_attempt: attempt, labels: ['macos-26'], steps: stepsFor(overrides), ...jobOverrides }] }]
+  return [{ total_count: 1, jobs: [{ name: PINS.requiredJob, conclusion: 'success', run_attempt: attempt, labels: ['ubuntu-24.04'], steps: stepsFor(overrides), ...jobOverrides }] }]
 }
 
 function gate(options = {}) {
@@ -419,10 +420,10 @@ function receiptFilesGh(args) {
 
 function firstStepScript(workflow) {
   const lines = workflow.split('\n')
-  const start = lines.findIndex(line => line.trim() === '- name: Require Apple Silicon host')
-  assert.notEqual(start, -1, 'first step missing')
+  const start = lines.findIndex(line => line.trim() === '- name: Require GitHub-hosted Ubuntu 24.04')
+  assert.notEqual(start, -1, 'Ubuntu first step missing')
   const run = lines.findIndex((line, index) => index > start && /^\s+run:\s*\|/u.test(line))
-  assert.notEqual(run, -1, 'first step run block missing')
+  assert.notEqual(run, -1, 'Ubuntu first step run block missing')
   const baseIndent = lines[run + 1].match(/^\s*/u)[0].length
   const body = []
   for (let index = run + 1; index < lines.length; index += 1) {
@@ -432,134 +433,157 @@ function firstStepScript(workflow) {
   return body.map(line => line.slice(baseIndent)).join('\n')
 }
 
-test('workflow fixes macos-26, seven inputs, ten steps, and strict host observation', () => {
+function ubuntuGroup() {
+  return PINS.definitions.find(definition => definition.runnerLabel === 'ubuntu-24.04')
+}
+
+function syntheticDefinition(label, firstStep, marker) {
+  const bytes = {
+    [PINS.workflowPath]: Buffer.from(`synthetic ${marker} workflow\n`),
+    [PINS.receiptScriptPath]: Buffer.from(`synthetic ${marker} receipt\n`),
+    [PINS.reconstructScriptPath]: Buffer.from(`synthetic ${marker} reconstruct\n`),
+  }
+  return {
+    bytes,
+    definition: {
+      name: `synthetic-${marker}`,
+      workflowFileSha256: sha256(bytes[PINS.workflowPath]),
+      receiptScriptSha256: sha256(bytes[PINS.receiptScriptPath]),
+      reconstructScriptSha256: sha256(bytes[PINS.reconstructScriptPath]),
+      runnerLabel: label,
+      firstStep,
+    },
+  }
+}
+
+function syntheticPins(definition) {
+  return {
+    repository: PINS.repository,
+    workflowPath: PINS.workflowPath,
+    receiptScriptPath: PINS.receiptScriptPath,
+    reconstructScriptPath: PINS.reconstructScriptPath,
+    allowedDispatchRefs: PINS.allowedDispatchRefs,
+    requiredJob: PINS.requiredJob,
+    requiredTailSteps: PINS.requiredTailSteps,
+    definitions: [definition],
+  }
+}
+
+test('workflow fixes ubuntu-24.04, seven inputs, ten steps, and exact ABI checks', () => {
   const workflow = workflowText()
-  assert.equal([...workflow.matchAll(/^\s+runs-on:\s*(.+)$/gmu)].map(match => match[1].trim()).join(','), 'macos-26')
-  assert.doesNotMatch(workflow, /use_standby|macos-15/u)
+  assert.deepEqual([...workflow.matchAll(/^\s+runs-on:\s*(.+)$/gmu)].map(match => match[1].trim()), ['ubuntu-24.04'])
+  assert.doesNotMatch(workflow, /use_standby|macos-15|macos-26/u)
   const dispatchBlock = workflow.slice(workflow.indexOf('  workflow_dispatch:'), workflow.indexOf('\npermissions:'))
   const inputs = [...dispatchBlock.matchAll(/^ {6}([a-z0-9_]+):$/gmu)].map(match => match[1])
   assert.deepEqual(inputs.sort(), ['base', 'candidate_commit', 'candidate_tree', 'commit_object', 'commit_object_sha256', 'patch', 'patch_sha256'])
-  const stepNames = [...workflow.matchAll(/^ {6}- name: (.+)$/gmu)].map(match => match[1])
-  assert.deepEqual(stepNames, [...PINS.requiredSteps])
+  const group = ubuntuGroup()
+  assert.ok(group, 'ubuntu group missing')
+  assert.deepEqual([...workflow.matchAll(/^ {6}- name: (.+)$/gmu)].map(match => match[1]), [group.firstStep, ...PINS.requiredTailSteps])
+  assert.equal(PINS.requiredTailSteps.length, 9)
   const script = firstStepScript(workflow)
   assert.match(script, /RUNNER_ENVIRONMENT.*github-hosted/u)
-  assert.match(script, /uname -s.*Darwin/u)
-  assert.match(script, /uname -m.*arm64/u)
-  assert.match(script, /sw_vers -productVersion/u)
-  assert.match(script, /\b26\b/u)
-  assert.match(script, /RUNNER_LABEL=/u)
-  assert.match(script, /runner_label='macos-26'/u)
+  assert.match(script, /\/usr\/bin\/uname -s.*Linux/u)
+  assert.match(script, /\/usr\/bin\/uname -m.*x86_64/u)
+  assert.match(script, /unset ID VERSION_ID/u)
+  assert.match(script, /\/etc\/os-release/u)
+  assert.match(script, /ID.*ubuntu/u)
+  assert.match(script, /VERSION_ID.*24\.04/u)
+  assert.match(script, /RUNNER_LABEL=ubuntu-24\.04/u)
+  assert.doesNotMatch(script, /ImageOS|ImageVersion|inputs\./u)
 })
 
-test('first host step accepts fake macOS 26 and rejects other systems', () => {
+test('Ubuntu first step executes real logic with fixture os-release and fake absolute uname', () => {
   const workflow = workflowText()
   const script = firstStepScript(workflow)
-  const dir = mkdtempSync(join(tmpdir(), 'dsh-host-step-'))
+  assert.ok((script.match(/\/etc\/os-release/gu) || []).length >= 1)
+  assert.match(script, /\/usr\/bin\/uname/u)
+  const dir = mkdtempSync(join(tmpdir(), 'dsh-ubuntu-host-'))
   const bin = join(dir, 'bin')
   mkdirSync(bin)
-  writeFileSync(join(bin, 'uname'), '#!/bin/sh\ncase "$1" in -s) echo Darwin;; -m) echo arm64;; *) exit 2;; esac\n')
-  writeFileSync(join(bin, 'sw_vers'), '#!/bin/sh\nprintf "%s\\n" "$FAKE_MACOS_VERSION"\n')
-  execFileSync('chmod', ['755', join(bin, 'uname'), join(bin, 'sw_vers')])
-  const run = (env) => spawnSync('bash', ['-c', script], {
+  writeFileSync(join(bin, 'uname'), '#!/bin/sh\ncase "$1" in -s) echo "${FAKE_UNAME_S:-Linux}";; -m) echo "${FAKE_UNAME_M:-x86_64}";; *) exit 2;; esac\n')
+  execFileSync('chmod', ['755', join(bin, 'uname')])
+  const osRelease = join(dir, 'os-release')
+  writeFileSync(osRelease, 'ID=ubuntu\nVERSION_ID="24.04"\n')
+  const localScript = script.replaceAll('/usr/bin/uname', join(bin, 'uname')).replaceAll('/etc/os-release', osRelease)
+  const run = (env) => spawnSync('bash', ['-c', localScript], {
     encoding: 'utf8',
     env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, GITHUB_ENV: join(dir, 'env'), ...env },
   })
   try {
-    const ok = run({ RUNNER_ENVIRONMENT: 'github-hosted', FAKE_MACOS_VERSION: '26.0' })
+    const ok = run({ RUNNER_ENVIRONMENT: 'github-hosted', ID: 'debian', VERSION_ID: '12' })
     assert.equal(ok.status, 0, ok.stderr)
-    assert.match(readFileSync(join(dir, 'env'), 'utf8'), /RUNNER_LABEL=macos-26/u)
-    const old = run({ RUNNER_ENVIRONMENT: 'github-hosted', FAKE_MACOS_VERSION: '25.0' })
-    assert.notEqual(old.status, 0, 'macOS 25 must fail the strict 26 host step')
-    const notHosted = run({ RUNNER_ENVIRONMENT: 'self-hosted', FAKE_MACOS_VERSION: '26.0' })
-    assert.notEqual(notHosted.status, 0, 'non-hosted runner must fail')
+    assert.match(readFileSync(join(dir, 'env'), 'utf8'), /RUNNER_LABEL=ubuntu-24\.04/u)
+    writeFileSync(osRelease, 'ID=debian\nVERSION_ID="24.04"\n')
+    assert.notEqual(run({ RUNNER_ENVIRONMENT: 'github-hosted' }).status, 0, 'non-Ubuntu ID must fail')
+    writeFileSync(osRelease, 'ID=ubuntu\nVERSION_ID="22.04"\n')
+    assert.notEqual(run({ RUNNER_ENVIRONMENT: 'github-hosted' }).status, 0, 'Ubuntu 22.04 must fail')
+    writeFileSync(osRelease, 'ID=ubuntu\nVERSION_ID="24.04"\n')
+    assert.notEqual(run({ RUNNER_ENVIRONMENT: 'self-hosted' }).status, 0, 'non-hosted runner must fail')
+    assert.notEqual(run({ RUNNER_ENVIRONMENT: 'github-hosted', FAKE_UNAME_M: 'aarch64' }).status, 0, 'non-x86_64 must fail')
   } finally { rmSync(dir, { recursive: true, force: true }) }
 })
 
-test('primary pin group is exact macos-26 and legacy tuple is only macos-15', () => {
-  const legacy = PINS.definitions.find(definition => definition.name === 'legacy')
-  const primary = PINS.definitions.find(definition => definition.name === 'primary-26')
-  assert.ok(legacy, 'legacy group missing')
-  assert.ok(primary, 'primary group missing')
-  assert.equal(legacy.runnerLabel, 'macos-15')
-  assert.equal(primary.runnerLabel, 'macos-26')
+test('pin definitions contain exact legacy-15, mac26, and ubuntu24 groups', () => {
+  const labels = PINS.definitions.map(definition => definition.runnerLabel).sort()
+  assert.deepEqual(labels, ['macos-15', 'macos-26', 'ubuntu-24.04'])
+  const legacy = PINS.definitions.find(definition => definition.runnerLabel === 'macos-15')
+  const mac26 = PINS.definitions.find(definition => definition.runnerLabel === 'macos-26')
+  const ubuntu = PINS.definitions.find(definition => definition.runnerLabel === 'ubuntu-24.04')
+  assert.equal(legacy.firstStep, 'Require Apple Silicon host')
+  assert.equal(mac26.firstStep, 'Require Apple Silicon host')
+  assert.equal(ubuntu.firstStep, 'Require GitHub-hosted Ubuntu 24.04')
+  assert.equal(PINS.requiredTailSteps.length, 9)
+  assert.equal(PINS.workflowFileSha256, ubuntu.workflowFileSha256)
+  assert.equal(PINS.receiptScriptSha256, ubuntu.receiptScriptSha256)
+  assert.equal(PINS.reconstructScriptSha256, ubuntu.reconstructScriptSha256)
   assert.equal(legacy.workflowFileSha256, '4414af7bd067f08aea4c9ecdc77b4313496fa3b6b77009025ae6d2a61357de7e')
   assert.equal(legacy.receiptScriptSha256, 'c7e7b5a5c8aa9213b275ea8f259d4603d170f9a72db9f81c0e2cf48f295a0bc5')
-  assert.equal(legacy.reconstructScriptSha256, '7d0a00313a25768fe9f7be7ad7777abfb26ff6a4b9002b8c84f3a033cc36b2bf')
-  assert.equal(PINS.workflowFileSha256, primary.workflowFileSha256)
-  assert.equal(PINS.receiptScriptSha256, primary.receiptScriptSha256)
-  assert.equal(PINS.reconstructScriptSha256, primary.reconstructScriptSha256)
-  assert.notEqual(legacy.workflowFileSha256, primary.workflowFileSha256)
-  assert.notEqual(legacy.receiptScriptSha256, primary.receiptScriptSha256)
-  assert.equal(legacy.reconstructScriptSha256, primary.reconstructScriptSha256)
-  const mixed = {
-    ...PINS,
-    definitions: [{ name: 'mixed', workflowFileSha256: primary.workflowFileSha256, receiptScriptSha256: legacy.receiptScriptSha256, reconstructScriptSha256: primary.reconstructScriptSha256 }],
-  }
-  assert.throws(() => verifyPinnedDefinition({ gh: receiptFilesGh, pins: mixed, repository: PINS.repository, dispatchSha }),
-    /must match exactly one pin group/u)
+  assert.equal(mac26.workflowFileSha256, 'f1bc4a78874e499eaee7fde25a421385ec2fd07c83ffb0855b002205a034d77e')
+  assert.equal(mac26.receiptScriptSha256, 'b2e902233c64643694b3fcd244379f2110f66f030cd7197798e7b978dc03b14c')
+  for (const definition of PINS.definitions) assert.equal(definition.reconstructScriptSha256, '7d0a00313a25768fe9f7be7ad7777abfb26ff6a4b9002b8c84f3a033cc36b2bf')
+  const mixed = { ...PINS, definitions: [{ name: 'mixed', workflowFileSha256: ubuntu.workflowFileSha256, receiptScriptSha256: legacy.receiptScriptSha256, reconstructScriptSha256: ubuntu.reconstructScriptSha256, runnerLabel: 'ubuntu-24.04', firstStep: ubuntu.firstStep }] }
+  assert.throws(() => verifyPinnedDefinition({ gh: receiptFilesGh, pins: mixed, repository: PINS.repository, dispatchSha }), /must match exactly one pin group/u)
 })
 
-test('macos-26 exact label and receipt are admitted; 15 and mismatches rejected', () => {
+test('Ubuntu exact label and receipt are admitted; Mac or unknown labels rejected', () => {
   const f = fixture()
   try {
     const state = gate({ tip: f.tip, tree: f.tree })
-    const verified = verifyPush({ cwd: f.repo, remote: approvedRemote, stdinText: push({ tip: f.tip }), runId: 77, gh: state.gh, log: () => {} })
-    assert.equal(verified.length, 1)
-    for (const labels of [[], ['macos-15'], ['self-hosted'], ['macos-26', 'macos-15']]) {
+    assert.equal(verifyPush({ cwd: f.repo, remote: approvedRemote, stdinText: push({ tip: f.tip }), runId: 77, gh: state.gh, log: () => {} }).length, 1)
+    for (const labels of [[], ['macos-15'], ['macos-26'], ['self-hosted'], ['ubuntu-24.04', 'macos-26']]) {
       expectFailure({ repo: f.repo, tip: f.tip, state: gate({ tip: f.tip, tree: f.tree, jobs: jobsFor({ jobOverrides: { labels } }) }) }, /required job labels/u)
     }
-    expectFailure({ repo: f.repo, tip: f.tip, state: gate({ tip: f.tip, tree: f.tree, jobs: jobsFor({ jobOverrides: { labels: ['macos-26'] } }), receiptOverrides: { runner: 'macos-15' } }) }, /receipt runner/u)
-    expectFailure({ repo: f.repo, tip: f.tip, state: gate({ tip: f.tip, tree: f.tree, receiptOverrides: { runner: 'macos-27' } }) }, /receipt runner/u)
+    expectFailure({ repo: f.repo, tip: f.tip, state: gate({ tip: f.tip, tree: f.tree, jobs: jobsFor({ jobOverrides: { labels: ['ubuntu-24.04'] } }), receiptOverrides: { runner: 'macos-26' } }) }, /receipt runner/u)
+    expectFailure({ repo: f.repo, tip: f.tip, state: gate({ tip: f.tip, tree: f.tree, receiptOverrides: { runner: 'macos-15' } }) }, /receipt runner/u)
   } finally { f.cleanup() }
 })
 
-test('synthetic legacy fixture admits only a 15 label without repository history', () => {
+test('synthetic Mac 15/26 tuples require old first step and their exact single label', () => {
   const f = fixture()
   try {
-    const legacyBytes = {
-      [PINS.workflowPath]: Buffer.from('synthetic legacy workflow bytes\n'),
-      [PINS.receiptScriptPath]: Buffer.from('synthetic legacy receipt bytes\n'),
-      [PINS.reconstructScriptPath]: Buffer.from('synthetic legacy reconstruct bytes\n'),
+    for (const [label, marker] of [['macos-15', 'mac15'], ['macos-26', 'mac26']]) {
+      const { bytes, definition } = syntheticDefinition(label, 'Require Apple Silicon host', marker)
+      const pins = syntheticPins(definition)
+      const steps = [definition.firstStep, ...PINS.requiredTailSteps].map(name => ({ name, conclusion: 'success' }))
+      const receiptOverrides = { runner: label, workflowFileSha256: definition.workflowFileSha256, receiptScriptSha256: definition.receiptScriptSha256, reconstructScriptSha256: definition.reconstructScriptSha256 }
+      const state = gate({ tip: f.tip, tree: f.tree, fileOverrides: bytes, receiptOverrides, jobs: jobsFor({ jobOverrides: { labels: [label], steps } }) })
+      assert.equal(verifyPush({ cwd: f.repo, remote: approvedRemote, stdinText: push({ tip: f.tip }), runId: 77, gh: state.gh, pins, log: () => {} }).length, 1)
+      const wrongLabel = label === 'macos-15' ? 'macos-26' : 'macos-15'
+      expectFailure({ repo: f.repo, tip: f.tip, pins, state: gate({ tip: f.tip, tree: f.tree, fileOverrides: bytes, receiptOverrides, jobs: jobsFor({ jobOverrides: { labels: [wrongLabel], steps } }) }) }, /required job labels/u)
+      const ubuntuFirst = [ubuntuGroup().firstStep, ...PINS.requiredTailSteps].map(name => ({ name, conclusion: 'success' }))
+      expectFailure({ repo: f.repo, tip: f.tip, pins, state: gate({ tip: f.tip, tree: f.tree, fileOverrides: bytes, receiptOverrides, jobs: jobsFor({ jobOverrides: { labels: [label], steps: ubuntuFirst } }) }) }, /required step/u)
     }
-    const legacyDefinition = {
-      name: 'legacy-fixture',
-      workflowFileSha256: sha256(legacyBytes[PINS.workflowPath]),
-      receiptScriptSha256: sha256(legacyBytes[PINS.receiptScriptPath]),
-      reconstructScriptSha256: sha256(legacyBytes[PINS.reconstructScriptPath]),
-      runnerLabel: 'macos-15',
-    }
-    const legacyPins = {
-      repository: PINS.repository,
-      workflowPath: PINS.workflowPath,
-      receiptScriptPath: PINS.receiptScriptPath,
-      reconstructScriptPath: PINS.reconstructScriptPath,
-      allowedDispatchRefs: PINS.allowedDispatchRefs,
-      requiredJob: PINS.requiredJob,
-      requiredSteps: PINS.requiredSteps,
-      definitions: [legacyDefinition],
-    }
-    const receiptOverrides = {
-      runner: 'macos-15',
-      workflowFileSha256: legacyDefinition.workflowFileSha256,
-      receiptScriptSha256: legacyDefinition.receiptScriptSha256,
-      reconstructScriptSha256: legacyDefinition.reconstructScriptSha256,
-    }
-    const state = gate({
-      tip: f.tip, tree: f.tree,
-      fileOverrides: legacyBytes,
-      receiptOverrides,
-      jobs: jobsFor({ jobOverrides: { labels: ['macos-15'] } }),
-    })
-    assert.equal(verifyPush({ cwd: f.repo, remote: approvedRemote, stdinText: push({ tip: f.tip }), runId: 77, gh: state.gh, pins: legacyPins, log: () => {} }).length, 1)
-    expectFailure({ repo: f.repo, tip: f.tip, pins: legacyPins, state: gate({
-      tip: f.tip, tree: f.tree, fileOverrides: legacyBytes,
-      receiptOverrides: { ...receiptOverrides, runner: 'macos-26' },
-      jobs: jobsFor({ jobOverrides: { labels: ['macos-26'] } }),
-    }) }, /job labels|receipt runner/u)
-    const formal = PINS.definitions.find(definition => definition.name === 'legacy')
-    assert.equal(formal.workflowFileSha256, '4414af7bd067f08aea4c9ecdc77b4313496fa3b6b77009025ae6d2a61357de7e')
-    assert.equal(formal.receiptScriptSha256, 'c7e7b5a5c8aa9213b275ea8f259d4603d170f9a72db9f81c0e2cf48f295a0bc5')
-    assert.equal(formal.reconstructScriptSha256, '7d0a00313a25768fe9f7be7ad7777abfb26ff6a4b9002b8c84f3a033cc36b2bf')
-    assert.equal(formal.runnerLabel, 'macos-15')
+  } finally { f.cleanup() }
+})
+
+test('skipped required steps and changed tip/ref/receipts remain rejected', () => {
+  const f = fixture()
+  try {
+    expectFailure({ repo: f.repo, tip: f.tip, state: gate({ tip: f.tip, tree: f.tree, jobs: jobsFor({ overrides: { 'Run typecheck': 'skipped' } }) }) }, /concluded skipped/u)
+    expectFailure({ repo: f.repo, tip: f.tip, state: gate({ tip: f.tip, tree: f.tree, receiptOverrides: { candidateCommit: f.base } }) }, /different commit/u)
+    expectFailure({ repo: f.repo, tip: f.tip, state: gate({ tip: f.tip, tree: f.tree, runOverrides: { head_branch: 'side' } }) }, /dispatched ref differs/u)
+    const state = gate({ tip: f.tip, tree: f.tree })
+    state.zip = zipReceipt(JSON.stringify({ ...receiptFor({ tip: f.tip, tree: f.tree }), extra: true }))
+    expectFailure({ repo: f.repo, tip: f.tip, state }, /receipt keys must be exactly/u)
   } finally { f.cleanup() }
 })

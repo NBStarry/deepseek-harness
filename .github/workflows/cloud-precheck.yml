@@ -50,7 +50,7 @@ concurrency:
 
 jobs:
   precheck:
-    runs-on: macos-26
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     defaults:
       run:
@@ -65,19 +65,18 @@ jobs:
       COMMIT_OBJECT: ${{ inputs.commit_object }}
       COMMIT_OBJECT_SHA256: ${{ inputs.commit_object_sha256 }}
     steps:
-      - name: Require Apple Silicon host
+      - name: Require GitHub-hosted Ubuntu 24.04
         run: |
           set -euo pipefail
           [ "${RUNNER_ENVIRONMENT:-}" = 'github-hosted' ] || { echo 'cloud precheck requires a GitHub-hosted runner' >&2; exit 1; }
-          [ "$(uname -s)" = 'Darwin' ] || { echo 'cloud precheck requires macOS' >&2; exit 1; }
-          [ "$(uname -m)" = 'arm64' ] || { echo 'cloud precheck requires Apple Silicon' >&2; exit 1; }
-          version=$(sw_vers -productVersion)
-          case "$version" in
-            26.*) runner_label='macos-26' ;;
-            *) echo "cloud precheck requires macOS 26, found $version" >&2; exit 1 ;;
-          esac
-          echo "RUNNER_LABEL=$runner_label" >> "$GITHUB_ENV"
-          echo "Runner: $runner_label ($version)"
+          [ "$(/usr/bin/uname -s)" = 'Linux' ] || { echo 'cloud precheck requires Linux' >&2; exit 1; }
+          [ "$(/usr/bin/uname -m)" = 'x86_64' ] || { echo 'cloud precheck requires x86_64' >&2; exit 1; }
+          [ -r /etc/os-release ] || { echo 'cloud precheck requires /etc/os-release' >&2; exit 1; }
+          unset ID VERSION_ID
+          . /etc/os-release
+          [ "${ID:-}" = 'ubuntu' ] && [ "${VERSION_ID:-}" = '24.04' ] || { echo "cloud precheck requires Ubuntu 24.04, found ${ID:-unknown} ${VERSION_ID:-unknown}" >&2; exit 1; }
+          echo "RUNNER_LABEL=ubuntu-24.04" >> "$GITHUB_ENV"
+          echo "Runner: ubuntu-24.04"
 
       - name: Checkout baseline
         uses: actions/checkout@v4
@@ -105,9 +104,9 @@ jobs:
           git show "$GITHUB_SHA:.github/workflows/cloud-precheck.yml" > "$RUNNER_TEMP/gate/workflow.yml"
           git show "$GITHUB_SHA:scripts/cloud-precheck/receipt.mjs" > "$RUNNER_TEMP/gate/receipt.mjs"
           git show "$GITHUB_SHA:scripts/cloud-precheck/reconstruct.mjs" > "$RUNNER_TEMP/gate/reconstruct.mjs"
-          workflow_sha=$(shasum -a 256 "$RUNNER_TEMP/gate/workflow.yml" | cut -d' ' -f1)
-          receipt_sha=$(shasum -a 256 "$RUNNER_TEMP/gate/receipt.mjs" | cut -d' ' -f1)
-          reconstruct_sha=$(shasum -a 256 "$RUNNER_TEMP/gate/reconstruct.mjs" | cut -d' ' -f1)
+          workflow_sha=$(sha256sum "$RUNNER_TEMP/gate/workflow.yml" | cut -d' ' -f1)
+          receipt_sha=$(sha256sum "$RUNNER_TEMP/gate/receipt.mjs" | cut -d' ' -f1)
+          reconstruct_sha=$(sha256sum "$RUNNER_TEMP/gate/reconstruct.mjs" | cut -d' ' -f1)
           echo "workflow_sha256=$workflow_sha" >> "$GITHUB_OUTPUT"
           echo "receipt_sha256=$receipt_sha" >> "$GITHUB_OUTPUT"
           echo "reconstruct_sha256=$reconstruct_sha" >> "$GITHUB_OUTPUT"

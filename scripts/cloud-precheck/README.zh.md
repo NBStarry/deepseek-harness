@@ -23,7 +23,7 @@
 - 名为 `cloud-precheck-<commit>-<run id>-<attempt>` 的 artifact 恰好存在一个、未过期，且在确认压缩包只有一个成员后用 `unzip -p` 读取唯一的 `receipt.json`；
 - 回执中的仓库、workflow、脚本哈希、run id、attempt、dispatch 版本与 ref、候选提交与树，都与待推送 tip 的实际树一致。
 
-门禁只运行在官方 GitHub 托管的 `macos-26` runner 上；没有 runner 选择参数。旧回执仅在旧 workflow/verifier 字节组内有效；它们不能授权 `macos-26` run。每个新候选都需要当前字节组提供的精确源码证明回执。
+普通推送由官方 GitHub 托管的 `ubuntu-24.04` x64 runner 发出的精确源回执把关：run 会重建确切提交、执行锁定安装（`pnpm install --frozen-lockfile`）并运行 `typecheck`。
 
 `DSH_CLOUD_PRECHECK_RUN` 只用于定位 run；证据是该 run 自身的 API 元数据与 artifact。需要设置 `GH_CONFIG_DIR`，使门禁能进行这些已认证调用。
 
@@ -35,7 +35,7 @@
 
 ## 门禁不能证明什么
 
-该 run 执行候选自身的 `package.json` 脚本，因此把 `typecheck` 改成提前退出的候选不在本门禁覆盖内；脚本改动仍由 review 负责。门禁绑定的是可审查的配置，而不是恶意的本地 `insteadOf` 传输重写；也无法阻止仓库管理员同时修改 workflow 与固定哈希。
+该 run 执行候选自身的 `package.json` 脚本，因此把 `typecheck` 改成提前退出的候选不在本门禁覆盖内；脚本改动仍由 review 负责。它也不能证明 macOS 打包、签名、公证、原生 macOS 测试或任何桌面证据；这些仍在本门禁之外，保持不变。历史 `macos-15` 或 `macos-26` 回执只按各自原定义与首步验真，不能冒充 Linux 证据，也不增加 runner 选路。门禁绑定的是可审查的配置，而不是恶意的本地 `insteadOf` 传输重写；也无法阻止仓库管理员同时修改 workflow 与固定哈希。
 
 ## 每次只推送一个不同的 tip
 
@@ -60,4 +60,4 @@ GitHub 只从默认分支注册 `workflow_dispatch` workflow，`--ref` 只选择
 
 ## 信任边界
 
-本门禁证明：被固定的 workflow、回执与重建字节所约束的确切提交，在托管 runner 上完成安装与类型检查，且 run、attempt、job、步骤与 artifact 均经 GitHub API 核实。它不是签名或 attestation 方案，也不替代 review。
+本门禁证明：被固定的 workflow、回执与重建字节所约束的确切提交完成安装与类型检查，且 run、attempt、job、步骤与 artifact 均经 GitHub API 核实。它不是签名或 attestation 方案，不替代 review。

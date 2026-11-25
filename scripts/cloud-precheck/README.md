@@ -23,7 +23,7 @@ A receipt is accepted only when all of the following hold:
 - the artifact named `cloud-precheck-<commit>-<run id>-<attempt>` exists exactly once, is not expired, and contains exactly one `receipt.json` read with `unzip -p` after listing a single archive member;
 - the receipt's repository, workflow, script hashes, run id, attempt, dispatched revision and ref, and candidate commit and tree match the pushed tip's actual tree.
 
-The gate runs only on the official GitHub-hosted `macos-26` runner; it has no runner-selection input. Legacy receipts belong to the old workflow/verifier byte group and are valid only there; they do not authorize a `macos-26` run. Every new candidate needs an exact source-proof receipt from the current byte group.
+Ordinary pushes are gated by an exact-source receipt from the official GitHub-hosted `ubuntu-24.04` x64 runner: the run rebuilds the exact commit, performs a locked install (`pnpm install --frozen-lockfile`), and runs `typecheck`.
 
 `DSH_CLOUD_PRECHECK_RUN` only locates the run; the run's own API metadata and artifact are the evidence. Set `GH_CONFIG_DIR` so the gate can make those authenticated calls.
 
@@ -35,7 +35,7 @@ The cloud run rebuilds the exact commit: it applies the binary patch to the base
 
 ## What the gate does not prove
 
-The run executes the candidate's own `package.json` scripts, so a candidate that rewrites `typecheck` to exit early is outside this gate; review still owns script changes. The gate also binds reviewable configuration rather than a malicious local `insteadOf` transport rewrite, and it cannot stop a repository administrator from editing the workflow and the pinned hashes together.
+The run executes the candidate's own `package.json` scripts, so a candidate that rewrites `typecheck` to exit early is outside this gate; review still owns script changes. It also cannot prove macOS packaging, signing, notarization, native macOS tests, or any desktop evidence; those remain outside this gate and are unchanged. Historical `macos-15` or `macos-26` receipts remain valid only under their original definitions and initial-step verification; they cannot stand in as Linux evidence, and no runner-selection input is added. The gate binds reviewable configuration rather than a malicious local `insteadOf` transport rewrite, and it cannot stop a repository administrator from editing the workflow and the pinned hashes together.
 
 ## One distinct tip per push
 
@@ -60,4 +60,4 @@ GitHub registers a `workflow_dispatch` workflow only from the default branch, an
 
 ## Trust boundaries
 
-This proves the exact commit installed and typed-checked on a hosted runner under pinned workflow, receipt, and reconstruction bytes, with the run, attempt, job, steps, and artifact confirmed through the GitHub API. It is not a signature or attestation scheme, and it does not replace review.
+This proves the exact commit installed and type-checked under pinned workflow, receipt, and reconstruction bytes, with the run, attempt, job, steps, and artifact confirmed through the GitHub API. It is not a signature or attestation scheme, and it does not replace review.

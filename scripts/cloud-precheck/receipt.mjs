@@ -133,7 +133,7 @@ function main() {
   for (const name of required) {
     if (values[name] === undefined) throw new Error(`receipt: --${name} is required`)
   }
-  if (values.runner !== 'macos-26') throw new Error('receipt: --runner must be the observed macos-26 label')
+  if (values.runner !== 'ubuntu-24.04') throw new Error('receipt: --runner must be the observed ubuntu-24.04 label')
   const env = process.env
   const receipt = {
     schema: RECEIPT_SCHEMA,

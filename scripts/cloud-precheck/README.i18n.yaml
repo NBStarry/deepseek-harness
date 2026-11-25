@@ -6,14 +6,14 @@
   en: 94285be8697d2579
   zh: 6ed76b03e1898fe3
 /cloud-precheck-gate/what-the-gate-proves:
-  en: 84aef260ed128162
-  zh: a50c2adccb84ed3f
+  en: 14143d2c552cd450
+  zh: e66b369baf66f260
 /cloud-precheck-gate/what-the-gate-proves-about-the-candidate:
   en: 6e0e4d57253cb304
   zh: d30548dd155cf391
 /cloud-precheck-gate/what-the-gate-does-not-prove:
-  en: 434bd6c52c7e52fd
-  zh: 92d759aea73edd4b
+  en: 4bd49ea3d445c1a0
+  zh: f035c223b5f417b1
 /cloud-precheck-gate/one-distinct-tip-per-push:
   en: c79f6d82736dd32e
   zh: 7a0d5ac56ef62ec7
@@ -24,5 +24,5 @@
   en: 497eea21d5964d1b
   zh: 9da649ac51f439db
 /cloud-precheck-gate/trust-boundaries:
-  en: 1168947c45aafc26
-  zh: 1649ebff8754fe1b
+  en: 790ced42d034a1d0
+  zh: 27ed93e944f6916d
