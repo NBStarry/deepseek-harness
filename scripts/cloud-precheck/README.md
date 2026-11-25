@@ -23,6 +23,8 @@ A receipt is accepted only when all of the following hold:
 - the artifact named `cloud-precheck-<commit>-<run id>-<attempt>` exists exactly once, is not expired, and contains exactly one `receipt.json` read with `unzip -p` after listing a single archive member;
 - the receipt's repository, workflow, script hashes, run id, attempt, dispatched revision and ref, and candidate commit and tree match the pushed tip's actual tree.
 
+The gate runs only on the official GitHub-hosted `macos-26` runner; it has no runner-selection input. Legacy receipts belong to the old workflow/verifier byte group and are valid only there; they do not authorize a `macos-26` run. Every new candidate needs an exact source-proof receipt from the current byte group.
+
 `DSH_CLOUD_PRECHECK_RUN` only locates the run; the run's own API metadata and artifact are the evidence. Set `GH_CONFIG_DIR` so the gate can make those authenticated calls.
 
 Any unknown, missing, unparsable, or unreachable fact rejects the push. There is no local fallback and no bypass switch: `LEFTHOOK=0` and `--no-verify` are not permitted. The gate never installs, builds, or type-checks locally.

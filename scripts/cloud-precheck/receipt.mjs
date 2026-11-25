@@ -122,16 +122,18 @@ function main() {
       'workflow-file-sha256': { type: 'string' },
       'receipt-script-sha256': { type: 'string' },
       'reconstruct-script-sha256': { type: 'string' },
+      runner: { type: 'string' },
       'started-at': { type: 'string' },
       'finished-at': { type: 'string' },
     },
     allowPositionals: false,
   })
   const required = ['out', 'base', 'candidate-commit', 'candidate-tree', 'patch-sha256',
-    'workflow-file-sha256', 'receipt-script-sha256', 'reconstruct-script-sha256', 'started-at', 'finished-at']
+    'workflow-file-sha256', 'receipt-script-sha256', 'reconstruct-script-sha256', 'runner', 'started-at', 'finished-at']
   for (const name of required) {
     if (values[name] === undefined) throw new Error(`receipt: --${name} is required`)
   }
+  if (values.runner !== 'macos-26') throw new Error('receipt: --runner must be the observed macos-26 label')
   const env = process.env
   const receipt = {
     schema: RECEIPT_SCHEMA,
@@ -154,7 +156,7 @@ function main() {
     conclusion: 'success',
     startedAt: values['started-at'],
     finishedAt: values['finished-at'],
-    runner: 'macos-15',
+    runner: values.runner,
   }
   const text = buildReceipt(receipt)
   writeFileSync(values.out, text)

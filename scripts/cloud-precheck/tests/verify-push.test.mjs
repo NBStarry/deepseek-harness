@@ -5,7 +5,7 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { PINS, parsePushUpdates, repositorySlug, verifyPush } from '../verify-push.mjs'
+import { PINS, parsePushUpdates, repositorySlug, verifyPinnedDefinition, verifyPush } from '../verify-push.mjs'
 import { RECEIPT_SCHEMA, serializeReceipt, sha256 } from '../receipt.mjs'
 
 const zero = '0'.repeat(40)
@@ -64,7 +64,7 @@ function receiptFor({ tip, tree, overrides = {} }) {
     conclusion: 'success',
     startedAt: '2026-01-01T00:00:00Z',
     finishedAt: '2026-01-01T00:10:00Z',
-    runner: 'macos-15',
+    runner: 'macos-26',
     ...overrides,
   }
 }
@@ -104,7 +104,7 @@ function stepsFor(overrides = {}) {
 }
 
 function jobsFor({ attempt = 1, overrides = {}, jobOverrides = {} } = {}) {
-  return [{ total_count: 1, jobs: [{ name: PINS.requiredJob, conclusion: 'success', run_attempt: attempt, steps: stepsFor(overrides), ...jobOverrides }] }]
+  return [{ total_count: 1, jobs: [{ name: PINS.requiredJob, conclusion: 'success', run_attempt: attempt, labels: ['macos-26'], steps: stepsFor(overrides), ...jobOverrides }] }]
 }
 
 function gate(options = {}) {
@@ -147,7 +147,7 @@ function push({ tip, remote = zero, localRef = 'refs/heads/feature' }) {
 }
 
 function expectFailure(f, pattern) {
-  assert.throws(() => verifyPush({ cwd: f.repo, remote: approvedRemote, stdinText: push({ tip: f.tip }), runId: 77, gh: f.state.gh, log: () => {} }), pattern)
+  assert.throws(() => verifyPush({ cwd: f.repo, remote: approvedRemote, stdinText: push({ tip: f.tip }), runId: 77, gh: f.state.gh, ...(f.pins === undefined ? {} : { pins: f.pins }), log: () => {} }), pattern)
 }
 
 test('admits one new branch push with a verified receipt', () => {
@@ -197,7 +197,7 @@ test('rejects a changed workflow, receipt writer, or reconstruction script', () 
         repo: f.repo,
         tip: f.tip,
         state: gate({ tip: f.tip, tree: f.tree, fileOverrides: { [path]: Buffer.concat([files[path], Buffer.from('# changed\n')]) } }),
-      }, /does not match the approved hash/u)
+      }, /does not match the approved hash|must match exactly one pin group/u)
     }
   } finally { f.cleanup() }
 })
@@ -402,5 +402,164 @@ test('importing the gate has no side effects and no exit status', () => {
     assert.equal(imported.status, 0, imported.stderr)
     assert.match(imported.stdout, /^imported$/mu)
     assert.equal(imported.stderr, '')
+  } finally { f.cleanup() }
+})
+
+
+function workflowText() {
+  return readFileSync(join(repoRoot, '.github', 'workflows', 'cloud-precheck.yml'), 'utf8')
+}
+
+function receiptFilesGh(args) {
+  const line = args.join(' ')
+  const match = /\/contents\/(.+?)\?ref=/u.exec(line)
+  if (match === null) throw new Error(`unexpected gh call: ${line}`)
+  return files[match[1]]
+}
+
+function firstStepScript(workflow) {
+  const lines = workflow.split('\n')
+  const start = lines.findIndex(line => line.trim() === '- name: Require Apple Silicon host')
+  assert.notEqual(start, -1, 'first step missing')
+  const run = lines.findIndex((line, index) => index > start && /^\s+run:\s*\|/u.test(line))
+  assert.notEqual(run, -1, 'first step run block missing')
+  const baseIndent = lines[run + 1].match(/^\s*/u)[0].length
+  const body = []
+  for (let index = run + 1; index < lines.length; index += 1) {
+    if (lines[index].trim() !== '' && lines[index].match(/^\s*/u)[0].length < baseIndent) break
+    body.push(lines[index])
+  }
+  return body.map(line => line.slice(baseIndent)).join('\n')
+}
+
+test('workflow fixes macos-26, seven inputs, ten steps, and strict host observation', () => {
+  const workflow = workflowText()
+  assert.equal([...workflow.matchAll(/^\s+runs-on:\s*(.+)$/gmu)].map(match => match[1].trim()).join(','), 'macos-26')
+  assert.doesNotMatch(workflow, /use_standby|macos-15/u)
+  const dispatchBlock = workflow.slice(workflow.indexOf('  workflow_dispatch:'), workflow.indexOf('\npermissions:'))
+  const inputs = [...dispatchBlock.matchAll(/^ {6}([a-z0-9_]+):$/gmu)].map(match => match[1])
+  assert.deepEqual(inputs.sort(), ['base', 'candidate_commit', 'candidate_tree', 'commit_object', 'commit_object_sha256', 'patch', 'patch_sha256'])
+  const stepNames = [...workflow.matchAll(/^ {6}- name: (.+)$/gmu)].map(match => match[1])
+  assert.deepEqual(stepNames, [...PINS.requiredSteps])
+  const script = firstStepScript(workflow)
+  assert.match(script, /RUNNER_ENVIRONMENT.*github-hosted/u)
+  assert.match(script, /uname -s.*Darwin/u)
+  assert.match(script, /uname -m.*arm64/u)
+  assert.match(script, /sw_vers -productVersion/u)
+  assert.match(script, /\b26\b/u)
+  assert.match(script, /RUNNER_LABEL=/u)
+  assert.match(script, /runner_label='macos-26'/u)
+})
+
+test('first host step accepts fake macOS 26 and rejects other systems', () => {
+  const workflow = workflowText()
+  const script = firstStepScript(workflow)
+  const dir = mkdtempSync(join(tmpdir(), 'dsh-host-step-'))
+  const bin = join(dir, 'bin')
+  mkdirSync(bin)
+  writeFileSync(join(bin, 'uname'), '#!/bin/sh\ncase "$1" in -s) echo Darwin;; -m) echo arm64;; *) exit 2;; esac\n')
+  writeFileSync(join(bin, 'sw_vers'), '#!/bin/sh\nprintf "%s\\n" "$FAKE_MACOS_VERSION"\n')
+  execFileSync('chmod', ['755', join(bin, 'uname'), join(bin, 'sw_vers')])
+  const run = (env) => spawnSync('bash', ['-c', script], {
+    encoding: 'utf8',
+    env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, GITHUB_ENV: join(dir, 'env'), ...env },
+  })
+  try {
+    const ok = run({ RUNNER_ENVIRONMENT: 'github-hosted', FAKE_MACOS_VERSION: '26.0' })
+    assert.equal(ok.status, 0, ok.stderr)
+    assert.match(readFileSync(join(dir, 'env'), 'utf8'), /RUNNER_LABEL=macos-26/u)
+    const old = run({ RUNNER_ENVIRONMENT: 'github-hosted', FAKE_MACOS_VERSION: '25.0' })
+    assert.notEqual(old.status, 0, 'macOS 25 must fail the strict 26 host step')
+    const notHosted = run({ RUNNER_ENVIRONMENT: 'self-hosted', FAKE_MACOS_VERSION: '26.0' })
+    assert.notEqual(notHosted.status, 0, 'non-hosted runner must fail')
+  } finally { rmSync(dir, { recursive: true, force: true }) }
+})
+
+test('primary pin group is exact macos-26 and legacy tuple is only macos-15', () => {
+  const legacy = PINS.definitions.find(definition => definition.name === 'legacy')
+  const primary = PINS.definitions.find(definition => definition.name === 'primary-26')
+  assert.ok(legacy, 'legacy group missing')
+  assert.ok(primary, 'primary group missing')
+  assert.equal(legacy.runnerLabel, 'macos-15')
+  assert.equal(primary.runnerLabel, 'macos-26')
+  assert.equal(legacy.workflowFileSha256, '4414af7bd067f08aea4c9ecdc77b4313496fa3b6b77009025ae6d2a61357de7e')
+  assert.equal(legacy.receiptScriptSha256, 'c7e7b5a5c8aa9213b275ea8f259d4603d170f9a72db9f81c0e2cf48f295a0bc5')
+  assert.equal(legacy.reconstructScriptSha256, '7d0a00313a25768fe9f7be7ad7777abfb26ff6a4b9002b8c84f3a033cc36b2bf')
+  assert.equal(PINS.workflowFileSha256, primary.workflowFileSha256)
+  assert.equal(PINS.receiptScriptSha256, primary.receiptScriptSha256)
+  assert.equal(PINS.reconstructScriptSha256, primary.reconstructScriptSha256)
+  assert.notEqual(legacy.workflowFileSha256, primary.workflowFileSha256)
+  assert.notEqual(legacy.receiptScriptSha256, primary.receiptScriptSha256)
+  assert.equal(legacy.reconstructScriptSha256, primary.reconstructScriptSha256)
+  const mixed = {
+    ...PINS,
+    definitions: [{ name: 'mixed', workflowFileSha256: primary.workflowFileSha256, receiptScriptSha256: legacy.receiptScriptSha256, reconstructScriptSha256: primary.reconstructScriptSha256 }],
+  }
+  assert.throws(() => verifyPinnedDefinition({ gh: receiptFilesGh, pins: mixed, repository: PINS.repository, dispatchSha }),
+    /must match exactly one pin group/u)
+})
+
+test('macos-26 exact label and receipt are admitted; 15 and mismatches rejected', () => {
+  const f = fixture()
+  try {
+    const state = gate({ tip: f.tip, tree: f.tree })
+    const verified = verifyPush({ cwd: f.repo, remote: approvedRemote, stdinText: push({ tip: f.tip }), runId: 77, gh: state.gh, log: () => {} })
+    assert.equal(verified.length, 1)
+    for (const labels of [[], ['macos-15'], ['self-hosted'], ['macos-26', 'macos-15']]) {
+      expectFailure({ repo: f.repo, tip: f.tip, state: gate({ tip: f.tip, tree: f.tree, jobs: jobsFor({ jobOverrides: { labels } }) }) }, /required job labels/u)
+    }
+    expectFailure({ repo: f.repo, tip: f.tip, state: gate({ tip: f.tip, tree: f.tree, jobs: jobsFor({ jobOverrides: { labels: ['macos-26'] } }), receiptOverrides: { runner: 'macos-15' } }) }, /receipt runner/u)
+    expectFailure({ repo: f.repo, tip: f.tip, state: gate({ tip: f.tip, tree: f.tree, receiptOverrides: { runner: 'macos-27' } }) }, /receipt runner/u)
+  } finally { f.cleanup() }
+})
+
+test('synthetic legacy fixture admits only a 15 label without repository history', () => {
+  const f = fixture()
+  try {
+    const legacyBytes = {
+      [PINS.workflowPath]: Buffer.from('synthetic legacy workflow bytes\n'),
+      [PINS.receiptScriptPath]: Buffer.from('synthetic legacy receipt bytes\n'),
+      [PINS.reconstructScriptPath]: Buffer.from('synthetic legacy reconstruct bytes\n'),
+    }
+    const legacyDefinition = {
+      name: 'legacy-fixture',
+      workflowFileSha256: sha256(legacyBytes[PINS.workflowPath]),
+      receiptScriptSha256: sha256(legacyBytes[PINS.receiptScriptPath]),
+      reconstructScriptSha256: sha256(legacyBytes[PINS.reconstructScriptPath]),
+      runnerLabel: 'macos-15',
+    }
+    const legacyPins = {
+      repository: PINS.repository,
+      workflowPath: PINS.workflowPath,
+      receiptScriptPath: PINS.receiptScriptPath,
+      reconstructScriptPath: PINS.reconstructScriptPath,
+      allowedDispatchRefs: PINS.allowedDispatchRefs,
+      requiredJob: PINS.requiredJob,
+      requiredSteps: PINS.requiredSteps,
+      definitions: [legacyDefinition],
+    }
+    const receiptOverrides = {
+      runner: 'macos-15',
+      workflowFileSha256: legacyDefinition.workflowFileSha256,
+      receiptScriptSha256: legacyDefinition.receiptScriptSha256,
+      reconstructScriptSha256: legacyDefinition.reconstructScriptSha256,
+    }
+    const state = gate({
+      tip: f.tip, tree: f.tree,
+      fileOverrides: legacyBytes,
+      receiptOverrides,
+      jobs: jobsFor({ jobOverrides: { labels: ['macos-15'] } }),
+    })
+    assert.equal(verifyPush({ cwd: f.repo, remote: approvedRemote, stdinText: push({ tip: f.tip }), runId: 77, gh: state.gh, pins: legacyPins, log: () => {} }).length, 1)
+    expectFailure({ repo: f.repo, tip: f.tip, pins: legacyPins, state: gate({
+      tip: f.tip, tree: f.tree, fileOverrides: legacyBytes,
+      receiptOverrides: { ...receiptOverrides, runner: 'macos-26' },
+      jobs: jobsFor({ jobOverrides: { labels: ['macos-26'] } }),
+    }) }, /job labels|receipt runner/u)
+    const formal = PINS.definitions.find(definition => definition.name === 'legacy')
+    assert.equal(formal.workflowFileSha256, '4414af7bd067f08aea4c9ecdc77b4313496fa3b6b77009025ae6d2a61357de7e')
+    assert.equal(formal.receiptScriptSha256, 'c7e7b5a5c8aa9213b275ea8f259d4603d170f9a72db9f81c0e2cf48f295a0bc5')
+    assert.equal(formal.reconstructScriptSha256, '7d0a00313a25768fe9f7be7ad7777abfb26ff6a4b9002b8c84f3a033cc36b2bf')
+    assert.equal(formal.runnerLabel, 'macos-15')
   } finally { f.cleanup() }
 })

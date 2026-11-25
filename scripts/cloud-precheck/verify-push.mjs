@@ -22,15 +22,30 @@ import { RECEIPT_SCHEMA, sha256, validateReceiptShape } from './receipt.mjs'
  * reviewable edit of these hashes; the workflow revision fetched from GitHub must
  * hash to exactly these values.
  */
+const legacyDefinition = Object.freeze({
+  name: 'legacy',
+  workflowFileSha256: '4414af7bd067f08aea4c9ecdc77b4313496fa3b6b77009025ae6d2a61357de7e',
+  receiptScriptSha256: 'c7e7b5a5c8aa9213b275ea8f259d4603d170f9a72db9f81c0e2cf48f295a0bc5',
+  reconstructScriptSha256: '7d0a00313a25768fe9f7be7ad7777abfb26ff6a4b9002b8c84f3a033cc36b2bf',
+  runnerLabel: 'macos-15',
+})
+
+const primaryDefinition = Object.freeze({
+  name: 'primary-26',
+  workflowFileSha256: 'f1bc4a78874e499eaee7fde25a421385ec2fd07c83ffb0855b002205a034d77e',
+  receiptScriptSha256: 'b2e902233c64643694b3fcd244379f2110f66f030cd7197798e7b978dc03b14c',
+  reconstructScriptSha256: '7d0a00313a25768fe9f7be7ad7777abfb26ff6a4b9002b8c84f3a033cc36b2bf',
+  runnerLabel: 'macos-26',
+})
+
 export const PINS = Object.freeze({
   repository: 'NBStarry/deepseek-harness',
   workflowPath: '.github/workflows/cloud-precheck.yml',
-  workflowFileSha256: '4414af7bd067f08aea4c9ecdc77b4313496fa3b6b77009025ae6d2a61357de7e',
   receiptScriptPath: 'scripts/cloud-precheck/receipt.mjs',
-  receiptScriptSha256: 'c7e7b5a5c8aa9213b275ea8f259d4603d170f9a72db9f81c0e2cf48f295a0bc5',
   reconstructScriptPath: 'scripts/cloud-precheck/reconstruct.mjs',
-  reconstructScriptSha256: '7d0a00313a25768fe9f7be7ad7777abfb26ff6a4b9002b8c84f3a033cc36b2bf',
-  // GitHub registers a workflow_dispatch workflow only from the default branch.
+  workflowFileSha256: primaryDefinition.workflowFileSha256,
+  receiptScriptSha256: primaryDefinition.receiptScriptSha256,
+  reconstructScriptSha256: primaryDefinition.reconstructScriptSha256,
   allowedDispatchRefs: Object.freeze(['refs/heads/master']),
   requiredJob: 'precheck',
   requiredSteps: Object.freeze([
@@ -45,6 +60,7 @@ export const PINS = Object.freeze({
     'Emit receipt',
     'Upload receipt',
   ]),
+  definitions: Object.freeze([legacyDefinition, primaryDefinition]),
 })
 
 const zeroSha = /^0{40}$/u
@@ -109,20 +125,24 @@ function runJson(gh, args) {
  * @param {object} options.pins - Approved gate definition.
  * @param {string} options.repository - `Owner/Repo` the run belongs to.
  * @param {string} options.dispatchSha - Revision the workflow definition was dispatched from.
- * @returns {void} Throws unless both pinned files match byte-for-byte.
+ * @returns {object} The one pin group matching all three trusted files.
+ * @throws If the files match no group or more than one group.
  */
 export function verifyPinnedDefinition({ gh, pins, repository, dispatchSha }) {
-  for (const [path, expected] of [
-    [pins.workflowPath, pins.workflowFileSha256],
-    [pins.receiptScriptPath, pins.receiptScriptSha256],
-    [pins.reconstructScriptPath, pins.reconstructScriptSha256],
-  ]) {
+  const hashes = new Map()
+  for (const path of [pins.workflowPath, pins.receiptScriptPath, pins.reconstructScriptPath]) {
     const bytes = ghText(gh, ['api', `repos/${repository}/contents/${path}?ref=${dispatchSha}`, '-H', 'Accept: application/vnd.github.raw'])
-    if (sha256(bytes) !== expected) throw new Error(`trusted definition file ${path} at ${dispatchSha} does not match the approved hash`)
+    hashes.set(path, sha256(bytes))
   }
+  const matched = pins.definitions.filter(definition =>
+    hashes.get(pins.workflowPath) === definition.workflowFileSha256
+    && hashes.get(pins.receiptScriptPath) === definition.receiptScriptSha256
+    && hashes.get(pins.reconstructScriptPath) === definition.reconstructScriptSha256)
+  if (matched.length !== 1) throw new Error(`trusted definition hashes must match exactly one pin group, matched ${matched.length}`)
+  return matched[0]
 }
 
-function verifiedJobs({ gh, pins, repository, runId, attempt }) {
+function verifiedJobs({ gh, pins, definition, repository, runId, attempt }) {
   const pages = runJson(gh, ['api', '--paginate', '--slurp',
     `repos/${repository}/actions/runs/${runId}/attempts/${attempt}/jobs?per_page=100`])
   if (!Array.isArray(pages) || pages.length === 0) throw new Error('job listing is empty')
@@ -142,6 +162,11 @@ function verifiedJobs({ gh, pins, repository, runId, attempt }) {
     if (matches.length !== 1) throw new Error(`required step ${JSON.stringify(name)} is missing from the precheck job`)
     if (matches[0].conclusion !== 'success') throw new Error(`required step ${JSON.stringify(name)} concluded ${String(matches[0].conclusion)}`)
   }
+  const labels = Array.isArray(matched[0].labels) ? matched[0].labels : []
+  if (labels.length !== 1 || labels[0] !== definition.runnerLabel) {
+    throw new Error(`required job labels ${JSON.stringify(labels)} do not match ${definition.runnerLabel}`)
+  }
+  return labels[0]
 }
 
 function artifactName(tip, runId, attempt) {
@@ -176,8 +201,8 @@ function verifiedReceipt({ gh, pins, repository, runId, tip, cwd }) {
     throw new Error(`run ${runId} reports no attempt number; the gate will not guess which attempt produced the receipt`)
   }
   if (typeof run.head_branch !== 'string' || run.head_branch.length === 0) throw new Error(`run ${runId} reports no dispatched branch`)
-  verifyPinnedDefinition({ gh, pins, repository, dispatchSha: run.head_sha })
-  verifiedJobs({ gh, pins, repository, runId, attempt: run.run_attempt })
+  const definition = verifyPinnedDefinition({ gh, pins, repository, dispatchSha: run.head_sha })
+  const jobLabel = verifiedJobs({ gh, pins, definition, repository, runId, attempt: run.run_attempt })
   const artifacts = runJson(gh, ['api', `repos/${repository}/actions/runs/${runId}/artifacts?per_page=100`])
   if (!Array.isArray(artifacts.artifacts) || artifacts.artifacts.length !== artifacts.total_count) {
     throw new Error('artifact listing is incomplete')
@@ -191,15 +216,18 @@ function verifiedReceipt({ gh, pins, repository, runId, tip, cwd }) {
   if (receipt.repository !== pins.repository) throw new Error(`receipt repository ${String(receipt.repository)} differs from ${pins.repository}`)
   if (receipt.workflowPath !== pins.workflowPath) throw new Error('receipt names a different workflow')
   if (receipt.receiptScriptPath !== pins.receiptScriptPath) throw new Error('receipt names a different verifier')
-  if (receipt.workflowFileSha256 !== pins.workflowFileSha256) throw new Error('receipt workflow hash is not the approved hash')
-  if (receipt.receiptScriptSha256 !== pins.receiptScriptSha256) throw new Error('receipt verifier hash is not the approved hash')
+  if (receipt.workflowFileSha256 !== definition.workflowFileSha256) throw new Error('receipt workflow hash is not the approved hash')
+  if (receipt.receiptScriptSha256 !== definition.receiptScriptSha256) throw new Error('receipt verifier hash is not the approved hash')
   if (receipt.runId !== String(runId)) throw new Error('receipt names a different run')
   if (receipt.runAttempt !== run.run_attempt) throw new Error('receipt attempt differs from the current attempt')
   if (receipt.dispatchSha !== run.head_sha) throw new Error('receipt dispatch revision differs from the run')
   if (!pins.allowedDispatchRefs.includes(receipt.dispatchRef)) throw new Error(`receipt dispatched ref ${String(receipt.dispatchRef)} is not approved`)
   if (`refs/heads/${run.head_branch}` !== receipt.dispatchRef) throw new Error('receipt dispatched ref differs from the run branch')
   if (receipt.reconstructScriptPath !== pins.reconstructScriptPath) throw new Error('receipt names a different reconstruction script')
-  if (receipt.reconstructScriptSha256 !== pins.reconstructScriptSha256) throw new Error('receipt reconstruction hash is not the approved hash')
+  if (receipt.reconstructScriptSha256 !== definition.reconstructScriptSha256) throw new Error('receipt reconstruction hash is not the approved hash')
+  if (receipt.runner !== jobLabel) {
+    throw new Error(`receipt runner ${String(receipt.runner)} does not match observed job label ${jobLabel}`)
+  }
   if (receipt.candidateCommit !== tip) throw new Error('receipt verified a different commit than the pushed tip')
   const tree = git(cwd, ['rev-parse', '--verify', `${tip}^{tree}`])
   if (receipt.candidateTree !== tree) throw new Error('receipt tree differs from the pushed commit tree')

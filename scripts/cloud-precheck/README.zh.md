@@ -23,6 +23,8 @@
 - 名为 `cloud-precheck-<commit>-<run id>-<attempt>` 的 artifact 恰好存在一个、未过期，且在确认压缩包只有一个成员后用 `unzip -p` 读取唯一的 `receipt.json`；
 - 回执中的仓库、workflow、脚本哈希、run id、attempt、dispatch 版本与 ref、候选提交与树，都与待推送 tip 的实际树一致。
 
+门禁只运行在官方 GitHub 托管的 `macos-26` runner 上；没有 runner 选择参数。旧回执仅在旧 workflow/verifier 字节组内有效；它们不能授权 `macos-26` run。每个新候选都需要当前字节组提供的精确源码证明回执。
+
 `DSH_CLOUD_PRECHECK_RUN` 只用于定位 run；证据是该 run 自身的 API 元数据与 artifact。需要设置 `GH_CONFIG_DIR`，使门禁能进行这些已认证调用。
 
 任何未知、缺失、无法解析或不可达的事实都会拒绝推送。没有本地回退，也没有绕过开关：不允许 `LEFTHOOK=0` 或 `--no-verify`。门禁不会在本地安装、构建或运行类型检查。

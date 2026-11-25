@@ -60,7 +60,7 @@ function receiptFor(tip, tree) {
     conclusion: 'success',
     startedAt: '2026-01-01T00:00:00Z',
     finishedAt: '2026-01-01T00:10:00Z',
-    runner: 'macos-15',
+    runner: 'macos-26',
   }
 }
 
@@ -112,6 +112,7 @@ function stateFor({ root, tip, tree, conclusion = 'success' }) {
       name: PINS.requiredJob,
       conclusion: 'success',
       run_attempt: 1,
+      labels: ['macos-26'],
       steps: PINS.requiredSteps.map(name => ({ name, conclusion: 'success' })),
     }],
   }]

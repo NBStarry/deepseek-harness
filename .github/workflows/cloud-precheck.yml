@@ -50,7 +50,7 @@ concurrency:
 
 jobs:
   precheck:
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 60
     defaults:
       run:
@@ -67,9 +67,17 @@ jobs:
     steps:
       - name: Require Apple Silicon host
         run: |
-          arch=$(uname -m)
-          echo "Runner architecture: $arch"
-          [ "$arch" = arm64 ] || { echo 'cloud precheck requires an Apple Silicon runner' >&2; exit 1; }
+          set -euo pipefail
+          [ "${RUNNER_ENVIRONMENT:-}" = 'github-hosted' ] || { echo 'cloud precheck requires a GitHub-hosted runner' >&2; exit 1; }
+          [ "$(uname -s)" = 'Darwin' ] || { echo 'cloud precheck requires macOS' >&2; exit 1; }
+          [ "$(uname -m)" = 'arm64' ] || { echo 'cloud precheck requires Apple Silicon' >&2; exit 1; }
+          version=$(sw_vers -productVersion)
+          case "$version" in
+            26.*) runner_label='macos-26' ;;
+            *) echo "cloud precheck requires macOS 26, found $version" >&2; exit 1 ;;
+          esac
+          echo "RUNNER_LABEL=$runner_label" >> "$GITHUB_ENV"
+          echo "Runner: $runner_label ($version)"
 
       - name: Checkout baseline
         uses: actions/checkout@v4
@@ -165,6 +173,7 @@ jobs:
             --workflow-file-sha256 "$WORKFLOW_FILE_SHA256" \
             --receipt-script-sha256 "$RECEIPT_SCRIPT_SHA256" \
             --reconstruct-script-sha256 "$RECONSTRUCT_SCRIPT_SHA256" \
+            --runner "$RUNNER_LABEL" \
             --started-at "$STARTED_AT" \
             --finished-at "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
