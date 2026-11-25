@@ -5,6 +5,7 @@ import type { PeerId } from '@deepseek-ai/dsh-typert-protocol'
 import { CONNECT_PATH, type ConnectionInteractions } from './connect-protocol.ts'
 import { credentialKey } from '@deepseek-ai/dsh-credentials'
 import type { CredentialProvider, CredentialRecord } from '@deepseek-ai/dsh-credentials'
+import type { DesktopSshLogin } from './desktop-ssh-login.ts'
 import type {
   ConnectionIndexRequest,
   ConnectionIndexResponse,
@@ -16,7 +17,9 @@ const DAY_MILLISECONDS = 24 * 60 * 60 * 1000
 const SECRET_BYTES = 32
 const TOKEN_QUERY = 'token'
 const COOKIE_PREFIX = 'dsh-auth-'
-const COOKIE_PAYLOAD_VERSION = 1
+// Legacy browser cookies cannot distinguish a process launch from an SSH login.
+const LIMITED_BROWSER_VERSION = 1
+const LAUNCH_BROWSER_VERSION = 3
 const STORED_SECRET_VERSION = 1
 const BASE64URL_PATTERN = /^[A-Za-z0-9_-]*$/
 const PROCESS_LAUNCH_TOKENS = new WeakMap<object, string>()
@@ -27,7 +30,7 @@ interface StoredSecretPayload {
 }
 
 interface BrowserCookiePayload {
-  readonly version: typeof COOKIE_PAYLOAD_VERSION
+  readonly version: typeof LIMITED_BROWSER_VERSION | typeof LAUNCH_BROWSER_VERSION
   readonly authority: string
   readonly issuedAt: number
   readonly expiresAt: number
@@ -113,18 +116,33 @@ function tokenMatches(actual: string, expected: string): boolean {
   return actualBytes.byteLength === expectedBytes.byteLength && timingSafeEqual(actualBytes, expectedBytes)
 }
 
+function matchesDesktopLogin(
+  login: DesktopSshLogin['verifier'], req: ConnectionIndexRequest, url: URL, token: string,
+): boolean {
+  const host = `127.0.0.1:${login.port}`
+  const origin = header(req.headers, 'origin')
+  return header(req.headers, 'host') === host && url.search === `?token=${token}`
+    && (origin === undefined || origin === new URL(`http://${host}`).origin)
+    && header(req.headers, 'sec-fetch-site') !== 'cross-site'
+    && ['forwarded', 'x-forwarded-for', 'x-forwarded-host', 'x-forwarded-proto'].every(name =>
+      req.headers instanceof Headers ? !req.headers.has(name) : req.headers[name] === undefined)
+    && login.matches(token)
+}
+
 function cookieName(authority: string): string {
   return COOKIE_PREFIX + encodeBase64Url(createHash('sha256').update(authority).digest())
 }
 
 /** Read the exact generated cookie without implementing general Cookie decoding. */
 function cookieValue(headerValue: string, name: string): string | undefined {
+  let value: string | undefined
   for (const segment of headerValue.split(';')) {
     const at = segment.indexOf('=')
     if (at === -1 || segment.slice(0, at).trim() !== name) continue
-    return segment.slice(at + 1).trim()
+    if (value !== undefined) return undefined
+    value = segment.slice(at + 1).trim()
   }
-  return undefined
+  return value
 }
 
 /** Serialize the fixed browser-session attributes; generated names and values are cookie-safe base64url. */
@@ -151,7 +169,7 @@ function encodeCookie(payload: CookiePayload, secret: Buffer): string {
 function decodeCookie(value: string, secret: Buffer): CookiePayload | undefined {
   const parts = value.split('.')
   const [version, body, encodedSignature] = parts
-  if (parts.length !== 3 || (version !== 'v1' && version !== 'v2') || body === undefined || encodedSignature === undefined) {
+  if (parts.length !== 3 || (version !== 'v1' && version !== 'v2' && version !== 'v3') || body === undefined || encodedSignature === undefined) {
     return undefined
   }
   const actualSignature = decodeBase64Url(encodedSignature)
@@ -168,18 +186,18 @@ function decodeCookie(value: string, secret: Buffer): CookiePayload | undefined 
     return undefined
   }
   if (!isRecord(decoded)
-    || (decoded.version !== COOKIE_PAYLOAD_VERSION && decoded.version !== 2)
+    || (decoded.version !== LIMITED_BROWSER_VERSION && decoded.version !== LAUNCH_BROWSER_VERSION && decoded.version !== 2)
     || version !== `v${decoded.version}`
     || typeof decoded.authority !== 'string'
     || typeof decoded.issuedAt !== 'number' || !Number.isSafeInteger(decoded.issuedAt)
     || typeof decoded.expiresAt !== 'number' || !Number.isSafeInteger(decoded.expiresAt)) return undefined
   const payload = { authority: decoded.authority, issuedAt: decoded.issuedAt, expiresAt: decoded.expiresAt }
-  if (decoded.version === COOKIE_PAYLOAD_VERSION) return { version: COOKIE_PAYLOAD_VERSION, ...payload }
+  if (decoded.version !== 2) return { version: decoded.version, ...payload }
   if (typeof decoded.id !== 'string' || decoded.id.length === 0) return undefined
   return { version: 2, ...payload, id: decoded.id as PeerId }
 }
 
-async function initializeSecret(credentials: CredentialProvider): Promise<Buffer> {
+async function initializeSecret(credentials: Pick<CredentialProvider, 'modifyRecord'>): Promise<Buffer> {
   const generated: StoredSecretPayload = {
     version: STORED_SECRET_VERSION,
     secret: encodeBase64Url(randomBytes(SECRET_BYTES)),
@@ -230,7 +248,7 @@ export class BrowserAuth {
    */
   static async create(
     processOwner: object,
-    credentials: CredentialProvider,
+    credentials: Pick<CredentialProvider, 'modifyRecord'>,
     maxAgeDays: number,
   ): Promise<BrowserAuth> {
     return new BrowserAuth(processOwner, await initializeSecret(credentials), maxAgeDays)
@@ -258,20 +276,23 @@ export class BrowserAuth {
    * minted cookie carries `Secure` when it does. Only that listener's own
    * protocol decides, never a `publicUrl` announcement or a forwarded header:
    * those describe a hop this process does not terminate.
+   * @param login - verifier selected for the originating Desktop TCP socket, absent on other carriers.
    * @returns true only when the caller may serve index.html.
    */
-  authorizeIndex(req: ConnectionIndexRequest, res: ConnectionIndexResponse, secure = false): boolean {
+  authorizeIndex(req: ConnectionIndexRequest, res: ConnectionIndexResponse, secure = false, login?: DesktopSshLogin['verifier']): boolean {
     /* v8 ignore next -- node:http always supplies url on server requests. */
     const url = new URL(req.url ?? '/', 'http://dsh.invalid')
     const tokens = url.searchParams.getAll(TOKEN_QUERY)
-    if (tokens.length > 0) {
+    const [token] = tokens
+    if (token !== undefined) {
       const authority = requestAudience(req.headers, secure)
-      if (req.method === 'GET' && url.pathname === '/' && tokens.length === 1
-        && authority !== undefined && tokenMatches(tokens.join(''), this.launchToken)) {
+      const version = tokens.length === 1 && req.method === 'GET' && url.pathname === '/'
+        ? this.indexCookieVersion(req, url, token, secure, login) : undefined
+      if (version !== undefined && authority !== undefined) {
         const issuedAt = Date.now()
         const expiresAt = issuedAt + this.maxAgeMilliseconds
         const value = encodeCookie({
-          version: COOKIE_PAYLOAD_VERSION,
+          version,
           authority,
           issuedAt,
           expiresAt,
@@ -302,6 +323,14 @@ export class BrowserAuth {
     if (this.isAuthenticated(req, secure)) return true
     this.writeUnauthorized(req, res)
     return false
+  }
+
+  private indexCookieVersion(
+    req: ConnectionIndexRequest, url: URL, token: string, secure: boolean, login?: DesktopSshLogin['verifier'],
+  ): BrowserCookiePayload['version'] | undefined {
+    if (tokenMatches(token, this.launchToken)) return LAUNCH_BROWSER_VERSION
+    if (!secure && login !== undefined && matchesDesktopLogin(login, req, url, token)) return LIMITED_BROWSER_VERSION
+    return undefined
   }
 
   /**
@@ -354,7 +383,20 @@ export class BrowserAuth {
    * @returns true only for an unexpired cookie signed by this activation's loaded secret.
    */
   isAuthenticated(request: ConnectionTrustRequest, secure = false): boolean {
-    return this.authenticate(request, secure)?.version === COOKIE_PAYLOAD_VERSION
+    return this.browserSession(request, secure) !== undefined
+  }
+
+  /**
+   * Classify a browser session only after signature, audience and lifetime checks.
+   * @param request - request carrying the signed cookie.
+   * @param secure - whether the receiving listener uses TLS.
+   * @returns the admitted browser class, or undefined for any other credential.
+   */
+  browserSession(request: ConnectionTrustRequest, secure: boolean): 'launch' | 'limited' | undefined {
+    const version = this.authenticate(request, secure)?.version
+    if (version === LAUNCH_BROWSER_VERSION) return 'launch'
+    if (version === LIMITED_BROWSER_VERSION) return 'limited'
+    return undefined
   }
 
   /**

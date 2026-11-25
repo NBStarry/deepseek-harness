@@ -799,7 +799,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'readonly browserPeer: PeerScope',
-        description: 'The owner Peer every authenticated browser connection shares.',
+        description: 'The owner Peer for process-launch browser sessions, distinct from SSH and legacy browser sessions.',
         parameters: [],
       },
       {
@@ -838,9 +838,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the Peer and idempotent release, or 409 for duplicate API ownership. The carrier releases on socket termination or failed upgrade; release removes API admission synchronously without cancelling independent HTTP calls.',
       },
       {
-        signature: 'authorizeIndex(request: ConnectionIndexRequest, response: ConnectionIndexResponse): boolean',
+        signature: 'authorizeIndex(request: ConnectionIndexRequest, response: ConnectionIndexResponse, socket?: ConnectionIndexSocket): boolean',
         description: 'Authenticate one frontend index request, owning a token redirect or 401. The cookie this mints is `Secure` when the mounted Web carrier serves TLS, which only that listener\'s protocol decides.',
-        parameters: [{ name: 'request', description: 'root or configured-index HTTP request.' }, { name: 'response', description: 'response owned when the result is false.' }],
+        parameters: [{ name: 'request', description: 'root or configured-index HTTP request.' }, { name: 'response', description: 'response owned when the result is false.' }, { name: 'socket', description: 'trusted TCP receiver facts; omitting these disables Desktop SSH token exchange.' }],
         returns: 'true only when the frontend may serve index.html.',
       },
       {
@@ -5957,6 +5957,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ConnectionIndexResponse {\n    writeHead(status: number, headers?: Readonly<Record<string, string>>): unknown;\n    end(body?: string): unknown;\n}',
   },
   {
+    name: 'ConnectionIndexSocket',
+    declaration: 'export interface ConnectionIndexSocket {\n    readonly originFormRoot: boolean;\n    readonly localAddress: string;\n    readonly localPort: number;\n}',
+  },
+  {
     name: 'ConnectionRequestBodyMode',
     declaration: 'export type ConnectionRequestBodyMode = \'buffered\' | \'streaming\';',
   },
@@ -9982,11 +9986,15 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'WebResource',
-    declaration: 'export type WebResource = (request: Request, peer?: PeerScope) => Promise<Response>;',
+    declaration: 'export type WebResource = (request: Request, peer?: PeerScope, socket?: WebResourceSocket) => Promise<Response>;',
   },
   {
     name: 'WebResourceRoute',
     declaration: 'export interface WebResourceRoute {\n    kind: WebRouteKind;\n    path: string;\n    resource: WebResource;\n}',
+  },
+  {
+    name: 'WebResourceSocket',
+    declaration: 'export interface WebResourceSocket {\n    readonly originFormRoot: boolean;\n    readonly localAddress: string;\n    readonly localPort: number;\n}',
   },
   {
     name: 'WebResultView',

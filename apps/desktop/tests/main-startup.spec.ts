@@ -152,6 +152,7 @@ const harness = await vi.hoisted(async () => {
   class FakeHost {
     readonly updateTasks = vi.fn(async (_action: 'inspect' | 'lock' | 'unlock') => false)
     readonly inspectQuit = vi.fn(async () => ({ activeTasks: false, scheduledTasks: false }))
+    readonly sshLogin = vi.fn<DesktopHostProcess['sshLogin']>().mockResolvedValue({ kind: 'unconfigured' })
     url = 'http://127.0.0.1:3080/?token=test'
     fetch = vi.fn(async () => Response.json({ hasApiKey: true, writable: true, localePreference: null }))
     readonly ready = deferred()
@@ -565,6 +566,7 @@ describe('desktop main startup', () => {
     expect(visible.map(item => item.role === 'quit' ? 'quit' : item.label ?? item.type)).toEqual([
       messages.aboutMenu, 'separator', messages.checkUpdatesMenu,
       ...platform === 'linux' ? [] : [messages.cliCommandMenu],
+      ...platform === 'darwin' ? [messages.sshConnectionMenu] : [],
       'separator', ...packaged ? [] : [messages.reloadPageMenu, messages.restartAppHostMenu],
       messages.toggleDevToolsMenu, 'separator',
       ...platform === 'darwin' ? [messages.hideApplication, messages.hideOtherApplications, messages.showAllApplications, 'separator'] : [],
@@ -595,6 +597,22 @@ describe('desktop main startup', () => {
       { role: 'toggleDevTools', label: nextLocale === 'en' ? en.toggleDevToolsMenu : zh.toggleDevToolsMenu },
     ])
     expect(harness.windows[0]!.options).toMatchObject({ webPreferences: { devTools: true } })
+  })
+
+  it('opens the macOS SSH connection guidance from the native menu, not from renderer IPC', async () => {
+    vi.stubGlobal('process', { ...process, platform: 'darwin' })
+    const host = await readyForUpdate()
+    const window = harness.windows[0]!
+    await window.shown.promise
+    const item = applicationMenuItems().find(entry => entry.label === en.sshConnectionMenu)
+    expect(item?.click).toBeTypeOf('function')
+    ;(item!.click as () => void)()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(host.sshLogin).toHaveBeenCalledWith({ action: 'status' }, expect.any(AbortSignal))
+    expect(harness.dialog.showMessageBox).toHaveBeenCalledExactlyOnceWith(window,
+      expect.objectContaining({ message: en.sshUnconfigured, buttons: [en.sshClose] }))
+    expect([...harness.handlers.keys(), ...harness.ipcOn.mock.calls.map(([name]) => name)])
+      .not.toContain('ssh-login')
   })
 
   it.each([
@@ -1105,7 +1123,7 @@ describe('desktop main startup', () => {
       : ['Application', 'editMenu'])
     const application = template[0]!.submenu as MenuItemConstructorOptions[]
     expect(application.filter(item => item.visible !== false).map(describeItem)).toEqual(platform === 'darwin'
-      ? ['about', 'separator', en.checkUpdatesMenu, en.cliCommandMenu, 'separator', 'toggleDevTools', 'separator', 'hide', 'hideOthers', 'unhide', 'separator', 'quit']
+      ? ['about', 'separator', en.checkUpdatesMenu, en.cliCommandMenu, en.sshConnectionMenu, 'separator', 'toggleDevTools', 'separator', 'hide', 'hideOthers', 'unhide', 'separator', 'quit']
       : ['about', 'separator', en.checkUpdatesMenu, 'separator', 'toggleDevTools', 'separator', 'quit'])
     expect(harness.menu.setApplicationMenu).toHaveBeenCalledOnce()
   })

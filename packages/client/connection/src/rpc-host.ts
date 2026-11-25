@@ -8,12 +8,14 @@ import {
   RpcId,
   type ClientRequest,
   type RpcId as RpcIdType,
+  type ConnectionIndexSocket,
 } from './rpc.ts'
 import { clientRequestSchema } from './rpc-schema.ts'
 import { bridge } from './http-bridge.ts'
 import { isRemoteAuthority, isTrustedApiRequest } from './api-request-trust.ts'
 import { API_PATH } from './api-path.ts'
 import type { BrowserAuth } from './browser-auth.ts'
+import { desktopIndexVerifier } from './desktop-ssh-login.ts'
 import { Peer } from './peer.ts'
 import type {
   PeerAdmission,
@@ -68,8 +70,9 @@ declare module '@deepseek-ai/cordis' {
 
 /** Host Connection service whose channel registrations belong to the caller fiber. */
 export class HostConnectionService extends Service implements HostConnectionHandle {
-  /** The Peer every authenticated browser connection shares. */
+  /** The owner Peer for browsers authenticated with the process launch token. */
   readonly browserPeer: PeerScope
+  private readonly limitedBrowserPeer: PeerScope
   private readonly peers = new Map<PeerId, PeerRecord>()
   private readonly owner: Context
   private disposed = false
@@ -92,9 +95,10 @@ export class HostConnectionService extends Service implements HostConnectionHand
     super(ctx, 'connection')
     this.owner = ctx
     this.browserPeer = new Peer(ctx, { principal: { kind: 'owner' } })
+    this.limitedBrowserPeer = new Peer(ctx, { principal: { kind: 'owner' } })
     ctx.effect(() => async () => {
       this.disposed = true
-      const peers = [this.browserPeer, ...Array.from(this.peers.values(), record => record.peer)]
+      const peers = [this.browserPeer, this.limitedBrowserPeer, ...Array.from(this.peers.values(), record => record.peer)]
       this.peers.clear()
       await Promise.all(peers.map(peer => peer.dispose()))
     }, 'client-connection: Peer scopes')
@@ -125,12 +129,13 @@ export class HostConnectionService extends Service implements HostConnectionHand
     return 'rejection' in admission ? admission.rejection : undefined
   }
 
-  /** Browser requests share an owner Peer; API HTTP does not depend on an attached socket. */
+  /** Browser sessions share a Peer per login class; API HTTP does not depend on an attached socket. */
   admit(request: ConnectionTrustRequest): PeerAdmission {
     if (!this.isTrusted(request)) return { rejection: 403 }
     if (this.disposed) return { rejection: 401 }
     const secure = this.owner.get('webServer')?.protocol === 'https:'
-    if (this.browserAuth.isAuthenticated(request, secure)) return { peer: this.browserPeer }
+    const browser = this.browserAuth.browserSession(request, secure)
+    if (browser !== undefined) return { peer: browser === 'launch' ? this.browserPeer : this.limitedBrowserPeer }
     const id = this.browserAuth.authenticateApi(request, secure)
     const record = id === undefined ? undefined : this.peers.get(id)
     return record === undefined ? { rejection: 401 } : { peer: record.peer }
@@ -190,8 +195,11 @@ export class HostConnectionService extends Service implements HostConnectionHand
   /**
    * Authenticate an index request; native TLS listeners mint Secure cookies.
    */
-  authorizeIndex(request: ConnectionIndexRequest, response: ConnectionIndexResponse): boolean {
-    return this.browserAuth.authorizeIndex(request, response, this.ctx.get('webServer')?.protocol === 'https:')
+  authorizeIndex(request: ConnectionIndexRequest, response: ConnectionIndexResponse, socket?: ConnectionIndexSocket): boolean {
+    const listener = this.ctx.get('webServer')
+    const login = socket === undefined || this.disposed ? undefined
+      : desktopIndexVerifier(this.ctx.get('desktopSshLogin'), listener, socket)
+    return this.browserAuth.authorizeIndex(request, response, listener?.protocol === 'https:', login)
   }
 
   /** Add this process's launch token to the clean application URL. */

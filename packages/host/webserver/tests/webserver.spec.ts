@@ -324,8 +324,10 @@ describe('real Loader composition', () => {
   })
 
   it('reports no origin before binding or for a bind address that no URL can express', () => {
-    expect(() => new HttpServer(new Context(), HttpServer.Config({ host: '127.0.0.1', port: 0 })).getOrigin())
-      .toThrow('webserver: origin read before the listener bound a port')
+    const unbound = new HttpServer(new Context(), HttpServer.Config({ host: '127.0.0.1', port: 3080 }))
+    expect(unbound.configuredPort).toBe(3080)
+    expect(unbound.port).toBeUndefined()
+    expect(() => unbound.getOrigin()).toThrow('webserver: origin read before the listener bound a port')
     expect(() => new HttpServer(new Context(), HttpServer.Config({ host: 'fe80::1%eth0', port: 0 })).getOrigin())
       .toThrow('webserver: bind address "fe80::1%eth0" carries an interface zone id, which no URL can express')
   })
@@ -476,6 +478,7 @@ describe('real Loader composition', () => {
     expect(server).toBeInstanceOf(HttpServer)
     const port = server.port
     expect(port).toBeGreaterThan(0)
+    expect(server.configuredPort).toBe(0)
 
     // Routing precedence: exact beats prefix, longest prefix wins, a prefix
     // route answers its own path, and routes own their method handling
@@ -719,6 +722,28 @@ describe('real Loader composition', () => {
     expect((await request(port, '/resource')).status).toBe(201)
   })
 
+  it('supplies only the receiving endpoint and raw root match to TCP resources with one Host', { timeout: 60_000 }, async () => {
+    const { webServer: server } = await loadComposition()
+    const port = boundPort(server.port)
+    const seen: Parameters<WebResource>[2][] = []
+    server.registerFallback({ resource: (_request, _peer, socket) => {
+      seen.push(socket)
+      return Promise.resolve(new Response(null, { status: 204 }))
+    } })
+    const endpoint = { localAddress: '127.0.0.1', localPort: port }
+    expect((await request(port, '/?example=1', { headers: { 'x-forwarded-host': 'example.invalid' } })).status).toBe(204)
+    expect((await request(port, '/', { method: 'HEAD' })).status).toBe(204)
+    expect(await rawExchange(port, 'GET /asset/../ HTTP/1.0\r\nHost: test.invalid\r\n\r\n')).toMatch(/^HTTP\/1\.1 204/)
+    expect(await rawExchange(port, 'GET / HTTP/1.0\r\nHost: first.invalid\r\nhOsT: second.invalid\r\n\r\n')).toMatch(/^HTTP\/1\.1 204/)
+    expect(await rawExchange(port, 'GET / HTTP/1.0\r\n\r\n')).toMatch(/^HTTP\/1\.1 204/)
+    const reader = { principal: { kind: 'owner' } } as PeerScope
+    expect((await server.readResource(new Request('http://reader.invalid/'), reader)).status).toBe(204)
+    expect(seen).toEqual([
+      { ...endpoint, originFormRoot: true }, { ...endpoint, originFormRoot: true },
+      { ...endpoint, originFormRoot: false }, undefined, undefined, undefined,
+    ])
+  })
+
   it('cancels a resource body when a socketless carrier aborts mid-response', { timeout: 60_000 }, async () => {
     // The Web Worker tunnel feeds synthesized exchanges to the request listener.
     // Its abort marks the response ended before emitting close, and a write after
@@ -727,17 +752,14 @@ describe('real Loader composition', () => {
     const server = loaded.webServer
     const cancelled = Promise.withResolvers<undefined>()
     const firstChunk = Promise.withResolvers<undefined>()
-    server.register({
-      kind: 'exact',
-      path: '/tunnel',
-      resource: () => Promise.resolve(new Response(new ReadableStream<Uint8Array>({
-        async pull(controller) {
-          await firstChunk.promise
-          controller.enqueue(new TextEncoder().encode('chunk'))
-        },
-        cancel() { cancelled.resolve(undefined) },
-      }))),
-    })
+    const resource = vi.fn<WebResource>(() => Promise.resolve(new Response(new ReadableStream<Uint8Array>({
+      async pull(controller) {
+        await firstChunk.promise
+        controller.enqueue(new TextEncoder().encode('chunk'))
+      },
+      cancel() { cancelled.resolve(undefined) },
+    }))))
+    server.register({ kind: 'exact', path: '/tunnel', resource })
     const listeners = new Map<string, Set<() => void>>()
     let finished = false
     const res = {
@@ -758,6 +780,7 @@ describe('real Loader composition', () => {
     for (const listener of [...(listeners.get('close') ?? [])]) listener()
     firstChunk.resolve(undefined)
     await cancelled.promise
+    expect(resource.mock.calls.map(call => call[2])).toEqual([undefined])
   })
 
   it('reads resources in process by the HTTP match order, for the given Peer', { timeout: 60_000 }, async () => {

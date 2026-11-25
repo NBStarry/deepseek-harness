@@ -25,6 +25,16 @@ interface PlatformSessionEvent {
   readonly session: PlatformSession | null
 }
 
+/** Private Desktop menu command; the revision makes actions from a stale dialog fail closed. */
+export type DesktopSshLoginRequest = { readonly action: 'status' }
+  | { readonly action: 'view' | 'rotate'; readonly revision: number }
+
+/** Native-only reply. Only a successful explicit view carries a token. */
+export type DesktopSshLoginResult =
+  | { readonly kind: 'unconfigured' | 'unavailable' | 'changed' }
+  | { readonly kind: 'ready'; readonly port: number; readonly revision: number; readonly hasToken: boolean }
+  | { readonly kind: 'token'; readonly token: string }
+
 type DesktopHostEvent = ReadyEvent | FatalEvent | PlatformSessionEvent | {
   readonly type: 'starting'
   readonly runId: PluginOperationRunId
@@ -44,6 +54,10 @@ type DesktopHostEvent = ReadyEvent | FatalEvent | PlatformSessionEvent | {
   readonly activeTasks: boolean
   readonly scheduledTasks: boolean
   readonly error?: string
+} | {
+  readonly type: 'ssh-login'
+  readonly requestId: number
+  readonly result: DesktopSshLoginResult
 }
 
 /** Correlated answer to one shell control request. */
@@ -105,6 +119,18 @@ function isDesktopHostEvent(message: unknown): message is DesktopHostEvent {
     case 'quit-inspection':
       return Number.isSafeInteger(candidate.requestId) && typeof candidate.activeTasks === 'boolean'
         && typeof candidate.scheduledTasks === 'boolean' && (candidate.error === undefined || typeof candidate.error === 'string')
+    case 'ssh-login': {
+      const result = candidate.result
+      if (typeof candidate.requestId !== 'number' || !Number.isSafeInteger(candidate.requestId) || candidate.requestId < 1
+        || typeof result !== 'object' || result === null || !('kind' in result)) return false
+      if (result.kind === 'unconfigured' || result.kind === 'unavailable' || result.kind === 'changed') return true
+      if (result.kind === 'token') return 'token' in result && typeof result.token === 'string'
+        && result.token.length === 68 && /^ssh_[0-9a-f]{64}$/u.test(result.token)
+      return result.kind === 'ready' && 'port' in result && typeof result.port === 'number'
+        && Number.isInteger(result.port) && result.port > 0 && result.port <= 65535 && result.port !== 80
+        && 'revision' in result && typeof result.revision === 'number' && Number.isSafeInteger(result.revision) && result.revision > 0
+        && 'hasToken' in result && typeof result.hasToken === 'boolean'
+    }
     default:
       return false
   }
@@ -253,8 +279,8 @@ export class DesktopHostProcess {
       else if (message.type === 'fatal') this.fail(new DesktopHostFatalError(message.message, message.diagnostic))
       else {
         const request = this.controlRequests.get(message.requestId)
-        if (message.error === undefined) request?.resolve(message)
-        else request?.reject(new Error(message.error))
+        if (message.type !== 'ssh-login' && message.error !== undefined) request?.reject(new Error(message.error))
+        else request?.resolve(message)
       }
     })
     child.once('error', (error) => { this.fail(error) })
@@ -305,9 +331,23 @@ export class DesktopHostProcess {
     return response.resource
   }
 
+  /**
+   * Use the parent/child channel for native-only SSH login controls.
+   * @param request - Read status, explicitly view the token, or rotate a confirmed revision.
+   * @param signal - Cancels the shell wait, not a credential write that the Host has already started.
+   * @returns A redacted result. A missed deadline does not confirm whether a rotation was stored.
+   */
+  async sshLogin(request: DesktopSshLoginRequest, signal: AbortSignal): Promise<DesktopSshLoginResult> {
+    try {
+      const reply = await this.control({ type: 'ssh-login', ...request }, 5_000, 'desktop SSH login timed out', 'desktop SSH login', signal)
+      if (reply.type === 'ssh-login' && (reply.result.kind !== 'token' || request.action === 'view')) return reply.result
+    } catch (_error) { /* No child or storage diagnostic is safe to display here. */ }
+    return { kind: 'unavailable' }
+  }
+
   private async control(
     request: { readonly type: 'update-tasks'; readonly action: 'inspect' | 'lock' | 'unlock' } | { readonly type: 'quit-inspection' }
-      | { readonly type: 'file-drag-resource'; readonly address: string },
+      | { readonly type: 'file-drag-resource'; readonly address: string } | ({ readonly type: 'ssh-login' } & DesktopSshLoginRequest),
     deadlineMs: number, deadlineMessage: string, operation: string, signal?: AbortSignal,
   ): Promise<DesktopHostControlResponse> {
     const child = this.child

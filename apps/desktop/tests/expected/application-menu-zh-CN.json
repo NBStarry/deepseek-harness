@@ -13,6 +13,9 @@
     "label": "管理 dsh 命令…"
   },
   {
+    "label": "SSH 连接…"
+  },
+  {
     "type": "separator"
   },
   {

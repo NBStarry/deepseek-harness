@@ -21,7 +21,7 @@ import { readFile } from 'node:fs/promises'
 import { dirname, extname, join, normalize, resolve, sep } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import type {} from '@deepseek-ai/dsh-client-connection'
+import type { ConnectionIndexSocket, PeerScope } from '@deepseek-ai/dsh-client-connection'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 
 /** Stable Cordis plugin name. */
@@ -82,7 +82,7 @@ function bytesBody(bytes: Uint8Array): ReadableStream<Uint8Array> {
  * @param distRoot - absolute dist root directory (resolved by the caller).
  * @param distIndex - absolute path of index.html inside distRoot.
  * @param authorizeIndex - answers an index request before its bytes are read:
- * the response to send instead of the index, or undefined to serve it.
+ * the response to send instead of the index, or the Peer for which to render it.
  * @param renderIndex - turns the raw index.html body into the served document
  * for the dist root and configured index path.
  * @returns the dist response; a HEAD response carries the GET status and
@@ -92,8 +92,8 @@ function bytesBody(bytes: Uint8Array): ReadableStream<Uint8Array> {
  */
 async function serveStatic(
   request: Request, distRoot: string, distIndex: string,
-  authorizeIndex: () => Response | undefined,
-  renderIndex: (html: string) => string,
+  authorizeIndex: () => Response | PeerScope,
+  renderIndex: (html: string, peer: PeerScope) => string,
 ): Promise<Response> {
   const target = resolve(normalize(join(distRoot, decodeURIComponent(new URL(request.url).pathname))))
   // Traversal rejection: the target must be distRoot itself (`/`) or stay under
@@ -104,9 +104,9 @@ async function serveStatic(
   let headers: Record<string, string>
   try {
     if (target === distRoot || target === distIndex) {
-      const refusal = authorizeIndex()
-      if (refusal !== undefined) return refusal
-      body = renderIndex(await readFile(distIndex, 'utf8'))
+      const admitted = authorizeIndex()
+      if (admitted instanceof Response) return admitted
+      body = renderIndex(await readFile(distIndex, 'utf8'), admitted)
       headers = { 'content-type': HTML_MIME }
     } else {
       body = await readFile(target)
@@ -136,7 +136,7 @@ export function apply(ctx: Context, config: Config): void {
   // Connection's browser authentication writes the token exchange's 303 or
   // the 401 through a writeHead/end response; capture it as a Fetch response.
   // The answer stays a 401 unless Connection writes another one.
-  const authorizeIndex = (request: Request): Response | undefined => {
+  const authorizeIndex = (request: Request, socket?: ConnectionIndexSocket): Response | PeerScope => {
     let status = 401
     let headers = new Headers()
     let body: string | undefined
@@ -146,21 +146,24 @@ export function apply(ctx: Context, config: Config): void {
         headers = new Headers(nextHeaders)
       },
       end(text) { body = text },
-    })
-    return admitted ? undefined : new Response(body, { status, headers })
+    }, socket)
+    if (admitted) {
+      const admission = ctx.connection.admit(request)
+      if ('peer' in admission) return admission.peer
+      status = admission.rejection
+    }
+    return new Response(body, { status, headers })
   }
   ctx.effect(() => ctx.webServer.registerFallback({
-    resource: (request, peer) => serveStatic(
+    resource: (request, peer, socket) => serveStatic(
       request,
       distRoot,
       distIndex,
       // A read with a Peer was admitted by its caller; an HTTP request carries
       // none and passes Connection's browser authentication instead.
-      () => peer === undefined ? authorizeIndex(request) : undefined,
-      // The browser authentication admits the owner's shared browser Peer. The
-      // base goes in after all index transforms, so it precedes every resource
-      // reference they insert.
-      html => ctx.webServer.renderIndex(html, peer ?? ctx.connection.browserPeer)
+      () => peer ?? authorizeIndex(request, socket),
+      // Insert the base after the transforms so it precedes every injected resource.
+      (html, admitted) => ctx.webServer.renderIndex(html, admitted)
         .replace(/<head(?:\s[^>]*)?>/i, open => `${open}<base href="./">`),
     ),
   }), 'frontend-static: fallback seat')

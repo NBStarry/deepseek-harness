@@ -15,6 +15,7 @@ import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Include from '@deepseek-ai/cordis-plugin-include'
 import * as Connection from '@deepseek-ai/dsh-client-connection'
+import { DesktopSshLogin } from '@deepseek-ai/dsh-client-connection'
 import LocalCredentials from '@deepseek-ai/dsh-credentials-local'
 import HttpServer from '@deepseek-ai/dsh-host-webserver'
 import * as FrontendStatic from '../src/index.ts'
@@ -230,6 +231,19 @@ describe('real Loader composition', () => {
     expect(() => server.registerFallback(() => {})).not.toThrow()
   })
 
+  it('passes the receiving endpoint to Connection for an opted-in index exchange', { timeout: 60_000 }, async () => {
+    const loaded = await loadComposition()
+    const port = loaded.webServer.port
+    if (port === undefined) throw new Error('frontend-static test: the listener has not bound a port')
+    const path = '/?token=fixture'
+    const manual = { redirect: 'manual' } as const
+    expect((await request(port, path, manual)).status).toBe(401)
+    loaded.provide('desktopSshLogin', { port, matches: token => token === 'fixture' })
+    expect((await request(port, path, manual)).status).toBe(303)
+    expect((await request(port, path, { ...manual, method: 'HEAD' })).status).toBe(401)
+    expect((await request(port, '/index.html?token=fixture', manual)).status).toBe(401)
+  })
+
   it('answers in-process reads for the given Peer without browser authentication', { timeout: 60_000 }, async () => {
     const loaded = await loadComposition()
     const server = loaded.webServer
@@ -301,5 +315,36 @@ describe('real Loader composition', () => {
     expect(await html.text()).toBe('<body>preview</body>')
     const index = await loaded.webServer.readResource(new Request(`${base}/`), reader)
     expect([index.status, index.headers.get('cache-control'), index.headers.get('etag')]).toEqual([200, null, null])
+  })
+
+  it('injects the actual admitted Peer for normal and SSH index windows', { timeout: 60_000 }, async () => {
+    const loaded = await loadComposition()
+    const port = loaded.webServer.port
+    if (port === undefined) throw new Error('frontend-static test: no bound port')
+    const base = `http://127.0.0.1:${String(port)}`
+
+    const launch = await fetch(loaded.connection.authenticatedUrl(base), { redirect: 'manual' })
+    expect(launch.status).toBe(303)
+    const normalCookie = launch.headers.get('set-cookie')?.split(';', 1)[0]
+    if (normalCookie === undefined) throw new Error('normal window did not receive a cookie')
+
+    // The SSH exchange becomes a distinct admitted Peer through the same listener.
+    const login = await DesktopSshLogin.open(loaded.credentials, port)
+    const token = await login.rotate()
+    loaded.provide('desktopSshLogin', login.verifier)
+    const ssh = await fetch(`${base}/?token=${token}`, { redirect: 'manual' })
+    expect(ssh.status).toBe(303)
+    const sshCookie = ssh.headers.get('set-cookie')?.split(';', 1)[0]
+    if (sshCookie === undefined) throw new Error('SSH window did not receive a cookie')
+
+    const seen: Connection.PeerScope[] = []
+    const off = loaded.on('webserver/index-inject', (_rows, peer) => { seen.push(peer) })
+    expect((await request(port, '/', { headers: { cookie: normalCookie } })).status).toBe(200)
+    expect((await request(port, '/', { headers: { cookie: sshCookie } })).status).toBe(200)
+    off()
+    expect(seen).toHaveLength(2)
+    expect(seen[0]).toBe(loaded.connection.browserPeer)
+    expect(seen[1]).not.toBe(loaded.connection.browserPeer)
+    expect(seen[1]?.principal.kind).toBe('owner')
   })
 })

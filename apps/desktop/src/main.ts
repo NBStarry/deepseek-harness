@@ -65,6 +65,7 @@ import { DesktopBrowserGuests } from './browser-guests.ts'
 import { installDesktopShortcuts } from './keyboard.ts'
 import { DesktopUpdateOverlays } from './update-overlay.ts'
 import { DesktopQuitConfirmation } from './quit-confirmation.ts'
+import { DesktopSshConnectionDialog } from './ssh-connection.ts'
 import { DesktopTray } from './tray.ts'
 import { DesktopBackgroundNotice } from './background-notice.ts'
 
@@ -587,12 +588,29 @@ async function main(): Promise<void> {
       },
       updateTasks: (action: 'inspect' | 'lock' | 'unlock') => host.updateTasks(action),
       inspectQuit: () => host.inspectQuit(),
+      sshLogin: (...args: Parameters<DesktopHostProcess['sshLogin']>) => host.sshLogin(...args),
       resolveDragResource: (address: string, signal?: AbortSignal) => host.resolveDragResource(address, signal),
     }
-  }, (state) => {
+  }, (state): void => {
+    if (state.phase !== 'ready') sshConnection.cancel()
     if (state.phase === 'error') reportFatal(state.failure, 'host')
     else if (!shuttingDown) backendReady = state.phase === 'ready'
   })
+  const canOpenSshConnection = (): boolean => !quitting && !shuttingDown && !isMandatory() && updateState.phase !== 'installing'
+  const sshConnection = new DesktopSshConnectionDialog(
+    () => canOpenSshConnection() ? backend.host : undefined,
+    () => locale.messages, (token) => { clipboard.writeText(token) },
+  )
+  const openSshConnection = (): void => {
+    if (!canOpenSshConnection()) return
+    const owner = currentDialogWindow()
+    if (owner === undefined || owner.isDestroyed()) return
+    if (!owner.isVisible()) focusPrimaryWindow()
+    if (!owner.isVisible()) return
+    void sshConnection.show(options => dialog.showMessageBox(owner, options)).catch((_error: unknown) => {
+      console.warn('Desktop SSH connection dialog unavailable')
+    })
+  }
 
   const updateErrors = new WeakMap<DesktopUpdateState, Promise<void>>()
   const showUpdateFailure = (state: DesktopUpdateState): Promise<void> => {
@@ -653,6 +671,7 @@ async function main(): Promise<void> {
     return welcomeBackend.read()
   }
   stopForRecovery = async () => {
+    sshConnection.cancel()
     const reports = stopOperationReports()
     try { await backend.close() }
     finally { await Promise.all([operationJournal?.drain(500), reports]) }
@@ -1058,8 +1077,9 @@ async function main(): Promise<void> {
       : { label: currentDesktopLocale().messages.aboutMenu, role: 'about' },
     { type: 'separator' },
     { label: currentDesktopLocale().messages.checkUpdatesMenu, click: () => { void openUpdatePrompt(true) } },
-    ...process.platform === 'darwin' || process.platform === 'win32'
+    ...darwin || process.platform === 'win32'
       ? [{ label: currentDesktopLocale().messages.cliCommandMenu, click: () => { void commandManager.show() } }] : [],
+    ...darwin ? [{ label: currentDesktopLocale().messages.sshConnectionMenu, click: openSshConnection }] : [],
     { type: 'separator' },
     ...development ? [
       { label: currentDesktopLocale().messages.reloadPageMenu, role: 'reload' as const },
@@ -1350,6 +1370,7 @@ async function main(): Promise<void> {
     shuttingDown = true
     updateJournal?.action('quit-requested')
     quitConfirmation.dispose()
+    sshConnection.cancel()
     backgroundNotice?.dispose()
     tray?.dispose()
     stopAccount?.()
@@ -1372,6 +1393,7 @@ async function main(): Promise<void> {
     if (shellInstallerOwnsQuit) {
       shuttingDown = true
       quitConfirmation.dispose()
+      sshConnection.cancel()
       backgroundNotice?.dispose()
       updateJournal?.action('quit-requested')
       tray?.dispose()
@@ -1414,6 +1436,7 @@ async function main(): Promise<void> {
     }, (state) => {
       if (state.error !== 'authentication-required') policyAuthenticationQueued = false
       if (state.blocking) {
+        sshConnection.cancel()
         for (const controller of ordinaryDialogs) controller.abort()
         if (!wasBlocking) updateDialog.cancel()
       }

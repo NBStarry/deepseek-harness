@@ -27,10 +27,11 @@ interface WebRoute {
 ```ts type-equiv
 /**
  * Answers one GET or HEAD request with a Fetch response. An HTTP request
- * arrives without a Peer and carries the client's headers; an in-process
- * {@link WebServer.readResource} read passes the Peer its caller admitted.
+ * arrives without a Peer and carries the client's headers. Socket facts are
+ * available only for a native TCP exchange with exactly one observed Host.
+ * {@link WebServer.readResource} passes the admitted Peer and no socket facts.
  */
-type WebResource = (request: Request, peer?: PeerScope) => Promise<Response>
+type WebResource = (request: Request, peer?: PeerScope, socket?: WebResourceSocket) => Promise<Response>
 ```
 
 ```ts type-equiv
@@ -166,9 +167,10 @@ admitConnection(request: ConnectionTrustRequest): ConnectionAdmission
  * which only that listener's protocol decides.
  * @param request - root or configured-index HTTP request.
  * @param response - response owned when the result is false.
+ * @param socket - trusted TCP receiver facts; omitting these disables Desktop SSH token exchange.
  * @returns true only when the frontend may serve index.html.
  */
-authorizeIndex(request: ConnectionIndexRequest, response: ConnectionIndexResponse): boolean
+authorizeIndex(request: ConnectionIndexRequest, response: ConnectionIndexResponse, socket?: ConnectionIndexSocket): boolean
 
 /**
  * Add the fresh process token to an ordinary Web application URL.
