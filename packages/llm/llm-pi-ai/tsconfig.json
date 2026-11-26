@@ -48,6 +48,9 @@
       "path": "../../../vendor/loader"
     },
     {
+      "path": "../../storage/storage-domain"
+    },
+    {
       "path": "../../settings/settings"
     }
   ]

@@ -58,6 +58,8 @@ import type {
 } from '@deepseek-ai/dsh-llm'
 import type { AttachmentStore, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { idleWatchdog, timeoutOf } from '@deepseek-ai/dsh-timeout'
+import { localCodexRequest, streamSelectedCodex } from './codex-dispatch.ts'
+import type { CodexAccountDispatch } from './codex-dispatch.ts'
 import type { ResolvedPiAiProviderProfile } from './config.ts'
 import { requestImageTarget, toPiContext } from './context.ts'
 import { conversationUpdates, createModels, getSupportedThinkingLevels } from './models.ts'
@@ -117,6 +119,10 @@ export interface PiAiAdapterOptions {
    * @returns headers to pass to pi-ai after applying Harness attribution.
    */
   prepareHeaders?: (request: PiAiRequestHeaderContext, headers: Headers) => Headers
+  /** Host-owned OAuth account selection for opted-in native Codex routes. */
+  codexAccounts?: CodexAccountDispatch
+  /** HTTP transport for account-selected Codex requests; defaults to Fetch. */
+  codexFetch?: typeof globalThis.fetch
   /** Resolve the optional durable attachment service at request time. */
   resolveAttachments?: () => AttachmentStore | undefined
   /** Bridge one attachment reference into the current model-tool execution world. */
@@ -416,14 +422,18 @@ export class PiAiAdapter extends LlmAdapter {
       && tools.every(tool => tool.deferLoading === true)
       && options.messages.some(message => message.role === 'developer'
         && message.content.some(block => block.type === 'tool-addition' || block.type === 'tool-removal'))
+    const accounts = profile.selectedCodex ? this.config.codexAccounts : undefined
+    if (profile.selectedCodex && accounts === undefined) {
+      throw new LlmError('Codex account selection is unavailable', 'MISSING_CREDENTIAL')
+    }
     const request = needsPlaceholder
       ? { ...options, tools: [ANTHROPIC_TOOL_UPDATE_PLACEHOLDER, ...tools] }
-      : options
+      : accounts === undefined ? options : localCodexRequest(options)
     const reasoning = resolveReasoningLevel(
       model,
       options.reasoningEffort ?? profile.reasoning,
     )
-    const apiKey = await this.config.resolveApiKey(options.provider, profile)
+    const apiKey = accounts === undefined ? await this.config.resolveApiKey(options.provider, profile) : undefined
 
     const consumer = new AbortController()
     const upstream = options.signal === undefined
@@ -455,14 +465,17 @@ export class PiAiAdapter extends LlmAdapter {
             maxBytes: profile.requestImageMaxBytes,
           },
         }, onReplayDegrade, updates.systemPromptUpdate === 'in-history')
-      const events = snapshot.models.streamSimple(model, context, {
+      const streamOptions: SimpleStreamOptions = {
         ...profileOptions(profile, reasoning, apiKey),
         ...options.temperature === undefined ? {} : { temperature: options.temperature },
         ...options.maxTokens === undefined ? {} : { maxTokens: options.maxTokens },
-        ...options.sessionId === undefined ? {} : { sessionId: String(options.sessionId) },
+        ...accounts !== undefined || options.sessionId === undefined ? {} : { sessionId: String(options.sessionId) },
         signal: watchdog.signal,
         headers: requestHeaders(profile.headers, options, model.baseUrl, this.config.prepareHeaders),
-      })
+      }
+      const stream = (opts: SimpleStreamOptions) => snapshot.models.streamSimple(model, context, opts)
+      const events = accounts === undefined ? stream(streamOptions)
+        : streamSelectedCodex(accounts, streamOptions, stream, this.config.codexFetch)
       const iterator = toStreamChunks(events, model.contextWindow, options.signal, model.id)[Symbol.asyncIterator]()
       let exhausted = false
       try {

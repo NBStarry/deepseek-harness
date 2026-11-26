@@ -187,6 +187,8 @@ export interface ResolvedPiAiProviderProfile
   extends Omit<PiAiProviderProfile, 'apiKeyEnv' | 'retryPolicy' | 'models' | 'displayName'> {
   /** Harness route key and the `Models` collection key (the configuration dict key). */
   provider: string
+  /** Native Codex OAuth account selection is enabled for this resolved route. */
+  selectedCodex: boolean
   /** Resolved display name for selectors and configuration surfaces. */
   displayName: string
   /** Validated credential reference, when one is configured. */
@@ -220,6 +222,8 @@ export interface ResolvedPiAiProviderProfile
 
 /** Plugin configuration: the provider routes this instance owns. */
 export interface Config {
+  /** Enable account switching on this instance’s native Codex route. */
+  codexAccounts?: boolean
   /**
    * pi-ai provider routes, keyed by provider. An empty (or omitted) dict is
    * the dormant settings-driven posture: the adapter mounts with no routes
@@ -229,7 +233,7 @@ export interface Config {
 }
 
 /** Plain options accepted by the provider resolver. */
-export type Options = { [K in keyof Config]?: Config[K] extends Volatile<infer T> ? T : never }
+export type Options = { providers?: Record<string, PiAiProviderProfile>; codexAccounts?: boolean }
 
 const thinkingBudgets = z.object({
   minimal: z.number(),
@@ -350,6 +354,7 @@ const profile = z.object({
 
 /** Runtime schema for {@link Config}. */
 export const Config = z.object({
+  codexAccounts: z.boolean(),
   providers: z.dict(profile).default({}).volatile(),
 })
 
@@ -364,7 +369,7 @@ export const Config = z.object({
 export function assertServiceable(config: Options, previous?: Options): void {
   const changed = Object.fromEntries(Object.entries(config.providers ?? {}).filter(([provider, profile]) =>
     !deepEqualJson(profile, previous?.providers?.[provider])))
-  resolveProfiles(changed)
+  resolveProfiles(config.codexAccounts === previous?.codexAccounts ? changed : config.providers, 'strict', config.codexAccounts)
 }
 
 /** Reject removed pre-release profile fields and name their replacements. */
@@ -405,11 +410,13 @@ function assertValidHeaders(provider: string, headers: Readonly<Record<string, s
  * routes. An omitted dict resolves to the empty, dormant route set.
  * @param providers - configured provider profiles keyed by route.
  * @param validation - writes require a complete catalog; stored reads retain catalog diagnostics.
+ * @param codexAccounts - whether native Codex uses the selected local OAuth account.
  * @returns validated profiles in configuration order.
  */
 export function resolveProfiles(
   providers: Readonly<Record<string, PiAiProviderProfile>> | undefined,
   validation: 'strict' | 'deferred' = 'strict',
+  codexAccounts = false,
 ): Map<string, ResolvedPiAiProviderProfile> {
   if (Array.isArray(providers)) {
     throw new Error('llm-pi-ai: providers is now a dict keyed by provider route, not an array of profiles')
@@ -418,6 +425,10 @@ export function resolveProfiles(
   const resolved = new Map<string, ResolvedPiAiProviderProfile>()
   for (const [provider, source] of entries) {
     rejectRemovedFields(provider, source)
+    const selectedCodex = codexAccounts && provider === 'openai-codex'
+    if (selectedCodex && (source.apiKeyEnv !== undefined || source.baseURL !== undefined || source.api !== undefined)) {
+      throw new Error('llm-pi-ai: codexAccounts requires the native openai-codex route without apiKeyEnv, baseURL or api')
+    }
     if (provider.length === 0) throw new Error('llm-pi-ai: provider names must be non-empty')
     if (source.baseURL !== undefined && source.baseURL.length === 0) {
       throw new Error(`llm-pi-ai: provider "${provider}" has an empty baseURL`)
@@ -481,7 +492,7 @@ export function resolveProfiles(
         ...source.api === undefined ? {} : { api: source.api },
         ...source.baseURL === undefined ? {} : { baseURL: source.baseURL },
         models: catalog.models,
-        namesCredential: source.apiKeyEnv !== undefined,
+        namesCredential: source.apiKeyEnv !== undefined || selectedCodex,
       })
     } catch (error) {
       if (validation === 'strict' || !(error instanceof PiAiCatalogError)) throw error
@@ -490,6 +501,7 @@ export function resolveProfiles(
     const { apiKeyEnv, retryPolicy, models: _models, displayName: _displayName, ...rest } = source
     resolved.set(provider, {
       ...rest,
+      selectedCodex,
       provider,
       displayName,
       ...apiKeyEnv === undefined ? {} : { apiKeyEnv: credentialRef(apiKeyEnv) },
